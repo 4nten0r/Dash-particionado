@@ -397,6 +397,57 @@ elif st.session_state.get("authentication_status"):
                 fig_m.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
                 st.plotly_chart(fig_m, use_container_width=True)
                 
+                # =====================================================================
+                # INÍCIO - BOTÃO RELATÓRIO EXECUTIVO EXCEL (DIRETORIA)
+                # =====================================================================
+                import io
+                st.markdown("#### 📥 Relatório Executivo para Diretoria")
+                
+                # Usamos a Data_Filtro (que vem lá da barra lateral) para extrair o Mês
+                if 'Data_Filtro' in df_faltas.columns:
+                    df_faltas_report = df_faltas.copy()
+                    df_faltas_report['Mês'] = df_faltas_report['Data_Filtro'].dt.strftime('%m/%Y')
+                    
+                    # Filtra a base original para manter apenas os 10 motoristas já calculados no gráfico acima
+                    df_top10_rep = df_faltas_report[df_faltas_report['Motorista'].isin(df_mot_falta['Motorista'])]
+                    
+                    # Cria a Tabela Dinâmica cruzando Motorista/Filial x Meses
+                    tabela_diretoria = pd.pivot_table(
+                        df_top10_rep,
+                        values='Quantidade',
+                        index=['Motorista', 'Filial'],
+                        columns='Mês',
+                        aggfunc='sum',
+                        fill_value=0
+                    )
+                    
+                    # Adiciona a coluna Total e ordena
+                    tabela_diretoria['Total'] = tabela_diretoria.sum(axis=1)
+                    tabela_diretoria = tabela_diretoria.sort_values(by='Total', ascending=False)
+                    
+                    # Gera o Excel em memória
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        tabela_diretoria.to_excel(writer, sheet_name='Top 10 Ofensores')
+                        # Ajuste estético da largura das colunas no Excel
+                        worksheet = writer.sheets['Top 10 Ofensores']
+                        worksheet.set_column('A:A', 35)
+                        worksheet.set_column('B:B', 25)
+                    
+                    excel_data = output.getvalue()
+                    
+                    st.download_button(
+                        label="📊 Baixar Visão Mensal Formatada (Excel)",
+                        data=excel_data,
+                        file_name='Relatorio_Diretoria_Top10_Faltas.xlsx',
+                        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    )
+                else:
+                    st.warning("A coluna 'Data_Filtro' não foi encontrada. O relatório não pôde ser gerado.")
+                # =====================================================================
+                # FIM - BOTÃO RELATÓRIO EXECUTIVO EXCEL
+                # =====================================================================
+                
                 st.write("---")
 
                 st.markdown("### 🏢 Volume de Faltas por Filial")
