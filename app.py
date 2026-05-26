@@ -248,8 +248,8 @@ elif st.session_state.get("authentication_status"):
 
         menu_selecionado = option_menu(
             menu_title=None,
-            options=["Visão Geral", "Danos", "Faltas", "Curva ABC", "Motoristas", "Clientes", "Rotas", "Tratativas", "Fraudes", "Plano de Ação", "Tendências"],
-            icons=["globe", "box-seam", "graph-down-arrow", "bar-chart-steps", "truck", "people-fill", "map", "clipboard2-check", "shield-exclamation", "kanban", "graph-up-arrow"],
+            options=["Visão Geral", "Danos", "Faltas", "Curva ABC", "Motoristas", "Clientes", "Rotas", "Tratativas", "Alertas Operacionais", "Plano de Ação", "Tendências"],
+            icons=["globe", "box-seam", "graph-down-arrow", "bar-chart-steps", "truck", "people-fill", "map", "clipboard2-check", "bell", "kanban", "graph-up-arrow"],
             default_index=0,
             orientation="horizontal",
             styles={
@@ -732,59 +732,85 @@ elif st.session_state.get("authentication_status"):
             pdf_aba8 = gerar_pdf_dinamico("Controle de Tratativas (Nuvem)", resumo_8, df_pdf_8)
             st.download_button(label="📄 Baixar Relatório: Tratativas (PDF)", data=pdf_aba8, file_name="Controle_Tratativas.pdf", mime="application/pdf", key="pdf_aba8")
 
-        elif menu_selecionado == "Fraudes":
-            st.subheader("🚨 Dossiê de Fraudes")
-            alertas = pd.DataFrame()
-            
+        elif menu_selecionado == "Alertas Operacionais":
+            st.subheader("⚠️ Alertas Operacionais — Análise de Anomalias")
+
             if not df_uni.empty:
                 df_cli = df_uni[~df_uni['Cliente'].str.upper().isin(['NÃO IDENTIFICADO', 'NAN', ''])].copy()
-                
+
+                # --- SLIDERS DE CONFIGURAÇÃO ---
+                st.markdown("#### ⚙️ Parâmetros de Detecção")
+                col_s1, col_s2, col_s3 = st.columns(3)
+                with col_s1:
+                    limiar_volume = st.slider("📦 Volume atípico (itens)", min_value=10, max_value=200, value=50, step=5,
+                                              help="Pedidos com quantidade acima deste valor são sinalizados.")
+                with col_s2:
+                    limiar_freq = st.slider("🔁 Recorrência mínima (ocorrências por cliente)", min_value=2, max_value=10, value=2, step=1,
+                                            help="Clientes com este número ou mais de ocorrências no período são sinalizados.")
+                with col_s3:
+                    limiar_mot = st.slider("🚛 Abrangência do motorista (clientes distintos)", min_value=5, max_value=50, value=20, step=5,
+                                           help="Motoristas que afetaram este número ou mais de clientes distintos são sinalizados.")
+
+                st.write("---")
+
+                # --- REGRA 1: VOLUME ATÍPICO ---
+                f_vol = df_cli[df_cli['Quantidade'] >= limiar_volume].copy()
+                f_vol['Alerta'] = 'Volume Atípico'
+
+                # --- REGRA 2: CLIENTE RECORRENTE ---
+                freq_cli = df_cli.groupby('Cliente').size().reset_index(name='Ocorrencias')
+                clientes_recorrentes = freq_cli[freq_cli['Ocorrencias'] >= limiar_freq]['Cliente']
+                f_rep = df_cli[df_cli['Cliente'].isin(clientes_recorrentes)].copy()
+                f_rep['Alerta'] = 'Cliente Recorrente'
+
+                # --- REGRA 3: ALTA ABRANGÊNCIA DE CLIENTES POR MOTORISTA ---
+                mot_abrangencia = df_cli.groupby('Motorista')['Cliente'].nunique().reset_index(name='Qtd_Clientes')
+                lista_mot = mot_abrangencia[mot_abrangencia['Qtd_Clientes'] >= limiar_mot]['Motorista']
+                f_mot = df_cli[df_cli['Motorista'].isin(lista_mot)].copy()
+                f_mot['Alerta'] = 'Alta Abrangência de Clientes'
+
+                # --- REGRA 4: TERMOS INDICATIVOS NA DESCRIÇÃO ---
                 f_isento = pd.DataFrame()
-                coluna_texto = 'description' 
-                
+                coluna_texto = 'description'
                 if coluna_texto in df_cli.columns:
                     termos_origem = [
-                        r'falta de volume', r'volume (inteiro|faltante)', r'sacola', 
+                        r'falta de volume', r'volume (inteiro|faltante)', r'sacola',
                         r'presente', r'trocado', r'Volume faltante(s)', r'SACOLA PRESENTE', r'inversão'
                     ]
                     padrao_busca = '|'.join(termos_origem)
                     f_isento = df_cli[df_cli[coluna_texto].str.contains(padrao_busca, case=False, na=False, regex=True)].copy()
                     if not f_isento.empty:
-                        f_isento['Motivo'] = 'Isento: Erro de Origem / Falta'
+                        f_isento['Alerta'] = 'Indicativo de Origem'
 
-                f_vol = df_cli[df_cli['Quantidade'] >= 50].copy()
-                f_vol['Motivo'] = 'Volume Crítico'
-                
-                df_rep = df_cli[df_cli['Quantidade'] >= 10].copy()
-                cli_susp = df_rep.groupby(['Cliente', 'Quantidade']).size().reset_index(name='V')
-                cli_susp = cli_susp[cli_susp['V'] > 1]
-                f_rep = pd.merge(df_cli, cli_susp[['Cliente', 'Quantidade']], on=['Cliente', 'Quantidade'])
-                f_rep['Motivo'] = 'Reclamação Idêntica'
-                
-                mot_suspeitos = df_cli.groupby('Motorista')['Cliente'].nunique().reset_index(name='Qtd_Clientes')
-                lista_mot = mot_suspeitos[mot_suspeitos['Qtd_Clientes'] > 20]['Motorista']
-                f_mot = df_cli[df_cli['Motorista'].isin(lista_mot)].copy()
-                f_mot['Motivo'] = 'Motorista Risco: +20 Clientes Afetados'
-                
                 alertas = pd.concat([f_vol, f_rep, f_mot, f_isento])
-                
+
                 if not alertas.empty:
-                    alertas = alertas.drop_duplicates(subset=['Pedido', 'Motivo'])
-                    alertas = alertas.loc[:, ~alertas.columns.duplicated()] 
-                    
-                    # --- NOVA LÓGICA DE SOMA AQUI ---
-                    total_itens_suspeitos = alertas['Quantidade'].sum()
-                    
-                    # --- MENSAGEM ATUALIZADA NA TELA ---
-                    st.error(f"⚠️ {len(alertas)} Indícios Detectados  |  📦 **{total_itens_suspeitos:,.0f} Itens Envolvidos**")
-                    
-                    colunas_exibicao = ['Motivo', 'Cliente', 'Pedido', 'Quantidade', 'Tipo_Ocorrencia', 'Motorista', 'Filial', 'Canal', 'description']
+                    alertas = alertas.drop_duplicates(subset=['Pedido', 'Alerta'])
+                    alertas = alertas.loc[:, ~alertas.columns.duplicated()]
+                    total_itens = alertas['Quantidade'].sum()
+
+                    # --- KPI CARDS POR CATEGORIA ---
+                    n_vol = len(f_vol.drop_duplicates(subset=['Pedido']))
+                    n_rep = len(f_rep.drop_duplicates(subset=['Pedido']))
+                    n_mot = len(f_mot.drop_duplicates(subset=['Pedido']))
+                    n_ise = len(f_isento.drop_duplicates(subset=['Pedido'])) if not f_isento.empty else 0
+
+                    c1, c2, c3, c4, c5 = st.columns(5)
+                    c1.metric("⚠️ Total de Alertas", len(alertas.drop_duplicates(subset=['Pedido'])))
+                    c2.metric("📦 Volume Atípico", n_vol, f"≥ {limiar_volume} itens")
+                    c3.metric("🔁 Clientes Recorrentes", n_rep, f"≥ {limiar_freq} ocorr.")
+                    c4.metric("🚛 Alta Abrangência", n_mot, f"≥ {limiar_mot} clientes")
+                    c5.metric("🏷️ Indicativo Origem", n_ise, "termos detectados")
+
+                    st.write("---")
+                    st.markdown(f"### 📋 Registros Sinalizados — {len(alertas.drop_duplicates(subset=['Pedido']))} pedidos | {total_itens:,.0f} itens envolvidos")
+
+                    colunas_exibicao = ['Alerta', 'Cliente', 'Pedido', 'Quantidade', 'Tipo_Ocorrencia', 'Motorista', 'Filial', 'Canal', 'description']
                     colunas_existentes = [col for col in colunas_exibicao if col in alertas.columns]
                     df_exibicao = alertas[colunas_existentes].copy()
-                    
                     st.dataframe(df_exibicao, use_container_width=True)
-                else: 
-                    st.success("✅ Tudo limpo no filtro atual.")
+                else:
+                    st.success("✅ Nenhuma anomalia detectada com os parâmetros atuais.")
 
         elif menu_selecionado == "Plano de Ação":
             st.subheader("📋 Plano de Ação e Diretrizes")
