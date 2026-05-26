@@ -362,20 +362,68 @@ elif st.session_state.get("authentication_status"):
                 
                 st.write("---")
 
-                st.markdown("### 📊 Análise de Danos: Top Motoristas e Filial")
-                # Nota: A paleta interna da função plot_top_motoristas também precisa ser alterada em graficos.py
-                fig_m = plot_top_motoristas(df_danos, dias_teal_scale) 
-                if fig_m: 
+                # ---- BLOCO MOTORISTA — DANOS ----
+                st.markdown("### 📊 Top 10 Motoristas — Danos")
+                motoristas_d = ["Todos"] + sorted([m for m in df_danos['Motorista'].unique() if str(m).upper() not in ['NÃO IDENTIFICADO', 'NAN', '']])
+                motorista_sel_d = st.selectbox("🔍 Detalhar motorista:", motoristas_d, key="sel_mot_danos")
+
+                fig_m = plot_top_motoristas(df_danos, dias_teal_scale)
+                if fig_m:
                     fig_m.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
                     st.plotly_chart(fig_m, use_container_width=True)
-                
+
+                if motorista_sel_d != "Todos":
+                    df_det_mot_d = df_danos[df_danos['Motorista'] == motorista_sel_d].copy()
+                    if not df_det_mot_d.empty:
+                        st.markdown(f"#### 📈 Evolução Mensal — {motorista_sel_d}")
+                        if 'Data_Filtro' in df_det_mot_d.columns:
+                            df_det_mot_d['Mês'] = df_det_mot_d['Data_Filtro'].dt.strftime('%m/%Y')
+                            ev_d = df_det_mot_d.groupby('Mês')['Quantidade'].sum().reset_index()
+                            ev_d['_sort'] = pd.to_datetime(ev_d['Mês'], format='%m/%Y', errors='coerce')
+                            ev_d = ev_d.sort_values('_sort').drop(columns='_sort')
+                            fig_ev_d = px.line(ev_d, x='Mês', y='Quantidade', markers=True,
+                                               color_discrete_sequence=['#2DC5B4'],
+                                               labels={'Quantidade': 'Itens Danificados'})
+                            fig_ev_d.update_traces(line_width=2.5, marker_size=8)
+                            fig_ev_d.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
+                            st.plotly_chart(fig_ev_d, use_container_width=True)
+                        st.markdown(f"#### 📋 Registros — {motorista_sel_d}")
+                        df_tab_mot_d = organizar_tabela(df_det_mot_d)
+                        cols_det_d = [c for c in ["Motorista", "Filial", "Quantidade", "descricao_ocorrencia", "Cliente", "Pedido", "Tipo_Ocorrencia"] if c in df_tab_mot_d.columns]
+                        st.dataframe(df_tab_mot_d[cols_det_d + [c for c in df_tab_mot_d.columns if c not in cols_det_d]], use_container_width=True)
+
                 st.write("---")
-                
+
+                # ---- BLOCO FILIAL — DANOS ----
+                st.markdown("### 🏢 Volume de Danos por Filial")
+                filiais_d = ["Todas"] + sorted([f for f in df_danos['Filial'].unique() if str(f).upper() not in ['NÃO IDENTIFICADO', 'NAN', '']])
+                filial_sel_d = st.selectbox("🔍 Detalhar filial:", filiais_d, key="sel_fil_danos")
+
                 fig_f = plot_comparativo_filial(df_danos, dias_teal_scale)
-                if fig_f: 
+                if fig_f:
                     fig_f.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
                     st.plotly_chart(fig_f, use_container_width=True)
-                
+
+                if filial_sel_d != "Todas":
+                    df_det_fil_d = df_danos[df_danos['Filial'] == filial_sel_d].copy()
+                    if not df_det_fil_d.empty:
+                        st.markdown(f"#### 📈 Evolução Mensal — Filial {filial_sel_d}")
+                        if 'Data_Filtro' in df_det_fil_d.columns:
+                            df_det_fil_d['Mês'] = df_det_fil_d['Data_Filtro'].dt.strftime('%m/%Y')
+                            ev_fd = df_det_fil_d.groupby('Mês')['Quantidade'].sum().reset_index()
+                            ev_fd['_sort'] = pd.to_datetime(ev_fd['Mês'], format='%m/%Y', errors='coerce')
+                            ev_fd = ev_fd.sort_values('_sort').drop(columns='_sort')
+                            fig_ev_fd = px.line(ev_fd, x='Mês', y='Quantidade', markers=True,
+                                                color_discrete_sequence=['#2DC5B4'],
+                                                labels={'Quantidade': 'Itens Danificados'})
+                            fig_ev_fd.update_traces(line_width=2.5, marker_size=8)
+                            fig_ev_fd.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
+                            st.plotly_chart(fig_ev_fd, use_container_width=True)
+                        st.markdown(f"#### 📋 Registros — Filial {filial_sel_d}")
+                        df_tab_fil_d = organizar_tabela(df_det_fil_d)
+                        cols_det_fd = [c for c in ["Motorista", "Filial", "Quantidade", "descricao_ocorrencia", "Cliente", "Pedido", "Tipo_Ocorrencia"] if c in df_tab_fil_d.columns]
+                        st.dataframe(df_tab_fil_d[cols_det_fd + [c for c in df_tab_fil_d.columns if c not in cols_det_fd]], use_container_width=True)
+
                 st.write("---")
                 st.markdown("### 🏷️ Categorias com Mais Danos")
                 if 'Categoria' in df_danos.columns:
@@ -449,23 +497,70 @@ elif st.session_state.get("authentication_status"):
                 
                 st.write("---")
 
-                st.markdown("### 📊 Top 10 Motoristas (Volume de Itens Faltantes)")
+                # ---- BLOCO MOTORISTA — FALTAS ----
+                st.markdown("### 📊 Top 10 Motoristas — Faltas")
+                motoristas_f = ["Todos"] + sorted([m for m in df_faltas['Motorista'].unique() if str(m).upper() not in ['NÃO IDENTIFICADO', 'NAN', '']])
+                motorista_sel_f = st.selectbox("🔍 Detalhar motorista:", motoristas_f, key="sel_mot_faltas")
+
                 df_mot_falta = df_faltas.groupby('Motorista')['Quantidade'].sum().nlargest(10).reset_index()
                 filial_map = df_faltas.groupby("Motorista")["Filial"].agg(lambda x: x.value_counts().index[0] if not x.empty else "Não Identificado").to_dict()
                 df_mot_falta["Filial"] = df_mot_falta["Motorista"].map(filial_map)
-                
                 fig_m = px.bar(df_mot_falta, x='Quantidade', y='Motorista', orientation='h', color='Quantidade', color_continuous_scale=dias_red_scale, text_auto='.0f', hover_data=['Filial'])
                 fig_m.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
                 st.plotly_chart(fig_m, use_container_width=True)
-                
+
+                if motorista_sel_f != "Todos":
+                    df_det_mot_f = df_faltas[df_faltas['Motorista'] == motorista_sel_f].copy()
+                    if not df_det_mot_f.empty:
+                        st.markdown(f"#### 📈 Evolução Mensal — {motorista_sel_f}")
+                        if 'Data_Filtro' in df_det_mot_f.columns:
+                            df_det_mot_f['Mês'] = df_det_mot_f['Data_Filtro'].dt.strftime('%m/%Y')
+                            ev_f = df_det_mot_f.groupby('Mês')['Quantidade'].sum().reset_index()
+                            ev_f['_sort'] = pd.to_datetime(ev_f['Mês'], format='%m/%Y', errors='coerce')
+                            ev_f = ev_f.sort_values('_sort').drop(columns='_sort')
+                            fig_ev_f = px.line(ev_f, x='Mês', y='Quantidade', markers=True,
+                                               color_discrete_sequence=['#C47A77'],
+                                               labels={'Quantidade': 'Itens Faltantes'})
+                            fig_ev_f.update_traces(line_width=2.5, marker_size=8)
+                            fig_ev_f.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
+                            st.plotly_chart(fig_ev_f, use_container_width=True)
+                        st.markdown(f"#### 📋 Registros — {motorista_sel_f}")
+                        df_tab_mot_f = organizar_tabela(df_det_mot_f)
+                        cols_det_mf = [c for c in ["Motorista", "Filial", "Quantidade", "descricao_ocorrencia", "Cliente", "Pedido", "Tipo_Ocorrencia"] if c in df_tab_mot_f.columns]
+                        st.dataframe(df_tab_mot_f[cols_det_mf + [c for c in df_tab_mot_f.columns if c not in cols_det_mf]], use_container_width=True)
+
                 st.write("---")
 
+                # ---- BLOCO FILIAL — FALTAS ----
                 st.markdown("### 🏢 Volume de Faltas por Filial")
+                filiais_f = ["Todas"] + sorted([f for f in df_faltas['Filial'].unique() if str(f).upper() not in ['NÃO IDENTIFICADO', 'NAN', '']])
+                filial_sel_f = st.selectbox("🔍 Detalhar filial:", filiais_f, key="sel_fil_faltas")
+
                 df_fil_falta = df_faltas.groupby('Filial')['Quantidade'].sum().sort_values(ascending=False).reset_index()
                 fig_f = px.bar(df_fil_falta, x='Filial', y='Quantidade', color='Quantidade', color_continuous_scale=dias_red_scale, text_auto='.0f')
                 fig_f.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
                 st.plotly_chart(fig_f, use_container_width=True)
-                
+
+                if filial_sel_f != "Todas":
+                    df_det_fil_f = df_faltas[df_faltas['Filial'] == filial_sel_f].copy()
+                    if not df_det_fil_f.empty:
+                        st.markdown(f"#### 📈 Evolução Mensal — Filial {filial_sel_f}")
+                        if 'Data_Filtro' in df_det_fil_f.columns:
+                            df_det_fil_f['Mês'] = df_det_fil_f['Data_Filtro'].dt.strftime('%m/%Y')
+                            ev_ff = df_det_fil_f.groupby('Mês')['Quantidade'].sum().reset_index()
+                            ev_ff['_sort'] = pd.to_datetime(ev_ff['Mês'], format='%m/%Y', errors='coerce')
+                            ev_ff = ev_ff.sort_values('_sort').drop(columns='_sort')
+                            fig_ev_ff = px.line(ev_ff, x='Mês', y='Quantidade', markers=True,
+                                                color_discrete_sequence=['#C47A77'],
+                                                labels={'Quantidade': 'Itens Faltantes'})
+                            fig_ev_ff.update_traces(line_width=2.5, marker_size=8)
+                            fig_ev_ff.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
+                            st.plotly_chart(fig_ev_ff, use_container_width=True)
+                        st.markdown(f"#### 📋 Registros — Filial {filial_sel_f}")
+                        df_tab_fil_f = organizar_tabela(df_det_fil_f)
+                        cols_det_ff = [c for c in ["Motorista", "Filial", "Quantidade", "descricao_ocorrencia", "Cliente", "Pedido", "Tipo_Ocorrencia"] if c in df_tab_fil_f.columns]
+                        st.dataframe(df_tab_fil_f[cols_det_ff + [c for c in df_tab_fil_f.columns if c not in cols_det_ff]], use_container_width=True)
+
                 st.write("---")
 
                 st.markdown("### 🏷️ Categorias com Maior Perda Física")
