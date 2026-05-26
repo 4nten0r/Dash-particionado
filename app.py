@@ -236,8 +236,8 @@ elif st.session_state.get("authentication_status"):
           <div class="hdr-left">
             <span class="logo-dias">DIAS+</span>
             <div>
-              <div class="hdr-title">PAINEL INTEGRADO DE LOGÍSTICA</div>
-              <div class="hdr-sub">Visão consolidada: Danos, Faltas (NC) e Auditoria Logística</div>
+              <div class="hdr-title">PAINEL LOGÍSTICO — NATURA</div>
+              <div class="hdr-sub">Visão consolidada: Danos, Faltas (NC) e Auditoria Logística · Atualizado em {pd.Timestamp.now().strftime('%d/%m/%Y às %H:%M')}</div>
             </div>
           </div>
           <div class="hdr-right">
@@ -248,8 +248,8 @@ elif st.session_state.get("authentication_status"):
 
         menu_selecionado = option_menu(
             menu_title=None,
-            options=["Visão Geral", "Danos", "Faltas", "Curva ABC", "Motoristas", "Clientes", "Rotas", "Tratativas", "Alertas Operacionais", "Plano de Ação", "Tendências"],
-            icons=["globe", "box-seam", "graph-down-arrow", "bar-chart-steps", "truck", "people-fill", "map", "clipboard2-check", "bell", "kanban", "graph-up-arrow"],
+            options=["Resumo Executivo", "Visão Geral", "Danos", "Faltas", "Curva ABC", "Motoristas", "Clientes", "Rotas", "Tratativas", "Alertas Operacionais", "Plano de Ação", "Tendências"],
+            icons=["clipboard2-data", "globe", "box-seam", "graph-down-arrow", "bar-chart-steps", "truck", "people-fill", "map", "clipboard2-check", "bell", "kanban", "graph-up-arrow"],
             default_index=0,
             orientation="horizontal",
             styles={
@@ -277,7 +277,77 @@ elif st.session_state.get("authentication_status"):
             },
         )
 
-        if menu_selecionado == "Visão Geral":
+        if menu_selecionado == "Resumo Executivo":
+            st.subheader("📋 Resumo Executivo — Natura")
+
+            # --- DELTAS MÊS ATUAL vs ANTERIOR ---
+            delta_total_str = delta_danos_str = delta_faltas_str = None
+            delta_total_color = delta_danos_color = delta_faltas_color = "off"
+            if 'Data_Filtro' in df_uni.columns and not df_uni.empty:
+                df_dt = df_uni.copy()
+                df_dt['AnoMes'] = df_dt['Data_Filtro'].dt.to_period('M')
+                periodos = sorted(df_dt['AnoMes'].dropna().unique())
+                if len(periodos) >= 2:
+                    mes_atual, mes_ant = periodos[-1], periodos[-2]
+                    n_at = len(df_dt[df_dt['AnoMes'] == mes_atual])
+                    n_an = len(df_dt[df_dt['AnoMes'] == mes_ant])
+                    nd_at = len(df_dt[(df_dt['AnoMes'] == mes_atual) & (df_dt['Tipo_Ocorrencia'] == 'Dano')])
+                    nd_an = len(df_dt[(df_dt['AnoMes'] == mes_ant) & (df_dt['Tipo_Ocorrencia'] == 'Dano')])
+                    nf_at = len(df_dt[(df_dt['AnoMes'] == mes_atual) & (df_dt['Tipo_Ocorrencia'] == 'Falta')])
+                    nf_an = len(df_dt[(df_dt['AnoMes'] == mes_ant) & (df_dt['Tipo_Ocorrencia'] == 'Falta')])
+                    delta_total_str = f"{n_at - n_an:+d} vs {str(mes_ant)}"
+                    delta_danos_str = f"{nd_at - nd_an:+d} vs {str(mes_ant)}"
+                    delta_faltas_str = f"{nf_at - nf_an:+d} vs {str(mes_ant)}"
+                    delta_total_color = delta_danos_color = delta_faltas_color = "inverse"
+
+            # --- KPIs LINHA 1 ---
+            c1, c2, c3 = st.columns(3)
+            c1.metric("📋 Total de Ocorrências", total_ocorrencias, delta_total_str, delta_color=delta_total_color)
+            c2.metric("📦 Ocorrências de Dano", len(df_danos), delta_danos_str, delta_color=delta_danos_color)
+            c3.metric("📉 Ocorrências de Falta", len(df_faltas), delta_faltas_str, delta_color=delta_faltas_color)
+
+            # --- KPIs LINHA 2 ---
+            filial_critica, qtd_filial = ("N/A", 0)
+            motor_nome, motor_qtd = ("N/A", 0)
+            cat_nome, cat_qtd = ("N/A", 0)
+            if not df_uni.empty:
+                _fil = df_uni.groupby('Filial')['Quantidade'].sum()
+                filial_critica, qtd_filial = _fil.idxmax(), int(_fil.max())
+                _mot = df_uni[~df_uni['Motorista'].str.upper().isin(['NÃO IDENTIFICADO','NAN',''])].groupby('Motorista')['Quantidade'].sum().nlargest(1)
+                if not _mot.empty: motor_nome, motor_qtd = _mot.index[0], int(_mot.iloc[0])
+                _cat = df_uni.groupby('Categoria')['Quantidade'].sum().nlargest(1)
+                if not _cat.empty: cat_nome, cat_qtd = _cat.index[0], int(_cat.iloc[0])
+
+            c4, c5, c6 = st.columns(3)
+            c4.metric("🏢 Filial Mais Crítica", filial_critica, f"{qtd_filial:,} itens", delta_color="off")
+            c5.metric("🚛 Motorista de Atenção", (motor_nome[:22] + "…") if len(motor_nome) > 25 else motor_nome, f"{motor_qtd:,} itens", delta_color="off")
+            c6.metric("🏷️ Categoria Principal", (cat_nome[:22] + "…") if len(cat_nome) > 25 else cat_nome, f"{cat_qtd:,} itens", delta_color="off")
+
+            st.write("---")
+
+            # --- SEMÁFORO + INSIGHTS ---
+            col_sem, col_ins = st.columns([1, 1])
+            with col_sem:
+                st.markdown("### 🚦 Semáforo por Filial")
+                if not df_uni.empty:
+                    df_sem = df_uni[df_uni['Filial'].str.upper() != 'NÃO IDENTIFICADO'].groupby('Filial')['Quantidade'].sum().reset_index()
+                    q33, q66 = df_sem['Quantidade'].quantile(0.33), df_sem['Quantidade'].quantile(0.66)
+                    df_sem['Status'] = df_sem['Quantidade'].apply(lambda v: "🟢 Normal" if v <= q33 else ("🟡 Atenção" if v <= q66 else "🔴 Crítico"))
+                    df_sem = df_sem.sort_values('Quantidade', ascending=False).rename(columns={'Quantidade': 'Total Itens'}).reset_index(drop=True)
+                    st.dataframe(df_sem[['Filial', 'Total Itens', 'Status']], use_container_width=True, hide_index=True)
+
+            with col_ins:
+                st.markdown("### 💡 Pontos de Atenção")
+                pct_d = len(df_danos) / total_ocorrencias * 100 if total_ocorrencias > 0 else 0
+                pct_f = len(df_faltas) / total_ocorrencias * 100 if total_ocorrencias > 0 else 0
+                st.error(f"🏢 **{filial_critica}** concentra o maior volume — **{qtd_filial:,} itens** no período selecionado.")
+                st.warning(f"🚛 **{motor_nome}** lidera o ranking de motoristas com **{motor_qtd:,} itens** afetados.")
+                st.info(f"🏷️ Categoria **{cat_nome}** representa a maior perda física: **{cat_qtd:,} itens**.")
+                tipo_pred = "Danos" if pct_d >= pct_f else "Faltas"
+                pct_pred = pct_d if pct_d >= pct_f else pct_f
+                st.info(f"📊 **{tipo_pred}** são o tipo predominante — **{pct_pred:.1f}%** das ocorrências.")
+
+        elif menu_selecionado == "Visão Geral":
             if total_ocorrencias > 0:
                 taxa_dano = len(df_danos) / total_ocorrencias
                 taxa_falta = len(df_faltas) / total_ocorrencias
@@ -642,7 +712,7 @@ elif st.session_state.get("authentication_status"):
                     fig_heat_m.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
                     st.plotly_chart(fig_heat_m, use_container_width=True)
                     
-                    st.markdown("**📋 Visão Consolidada dos Piores Motoristas:**")
+                    st.markdown("**📋 Motoristas de Atenção — Visão Consolidada:**")
                     df_resumo_mot = df_uni_top_mot.pivot_table(index='Motorista', columns='Tipo_Ocorrencia', values='Quantidade', aggfunc='sum', fill_value=0).reset_index()
                     if 'Dano' not in df_resumo_mot.columns: df_resumo_mot['Dano'] = 0
                     if 'Falta' not in df_resumo_mot.columns: df_resumo_mot['Falta'] = 0
@@ -680,7 +750,7 @@ elif st.session_state.get("authentication_status"):
                     fig_heat_c.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
                     st.plotly_chart(fig_heat_c, use_container_width=True)
                     
-                    st.markdown("**📋 Visão Consolidada dos Piores Clientes:**")
+                    st.markdown("**📋 Clientes Críticos — Visão Consolidada:**")
                     df_resumo_cli = df_uni_top_clientes.pivot_table(index='Cliente', columns='Tipo_Ocorrencia', values='Quantidade', aggfunc='sum', fill_value=0).reset_index()
                     if 'Dano' not in df_resumo_cli.columns: df_resumo_cli['Dano'] = 0
                     if 'Falta' not in df_resumo_cli.columns: df_resumo_cli['Falta'] = 0
@@ -786,16 +856,21 @@ elif st.session_state.get("authentication_status"):
             
             try:
                 with st.spinner("Sincronizando Danos com o OneDrive..."):
-                    df_tratativas_danos = carregar_excel_nuvem_turbinado(link_consolidado, "danos").dropna(how='all').head(5).reset_index(drop=True)
-                st.success("✅ Tratativas de Danos conectadas com sucesso!")
-                
-                with st.expander("⚙️ Escolher colunas para exibir (Danos)"):
+                    df_tratativas_danos = carregar_excel_nuvem_turbinado(link_consolidado, "danos").dropna(how='all').reset_index(drop=True)
+                st.success(f"✅ {len(df_tratativas_danos)} registros de Danos carregados do OneDrive.")
+
+                c_t1, c_t2, c_t3 = st.columns(3)
+                c_t1.metric("📋 Total de Registros", len(df_tratativas_danos))
+                c_t2.metric("📁 Colunas Disponíveis", len(df_tratativas_danos.columns))
+                c_t3.metric("📊 Filiais Envolvidas", df_tratativas_danos['filial'].nunique() if 'filial' in df_tratativas_danos.columns else "—")
+
+                with st.expander("⚙️ Escolher colunas para exibir (Danos)", expanded=False):
                     todas_colunas_danos = df_tratativas_danos.columns.tolist()
                     colunas_selecionadas_danos = st.multiselect("Selecione as colunas desejadas:", options=todas_colunas_danos, default=todas_colunas_danos, key="multi_danos")
-                
+
                 df_exibicao_danos = df_tratativas_danos[colunas_selecionadas_danos]
                 st.dataframe(df_exibicao_danos, use_container_width=True)
-                
+
             except Exception as e:
                 st.warning("⏳ Falha ao carregar a nuvem. Aguardando a verificação do link público.")
                 st.info(f"Detalhe técnico: {e}")
@@ -807,16 +882,21 @@ elif st.session_state.get("authentication_status"):
             
             try:
                 with st.spinner("Sincronizando Faltas com o OneDrive..."):
-                    df_tratativas_faltas = carregar_excel_nuvem_turbinado(link_consolidado, "faltas").dropna(how='all').head(5).reset_index(drop=True)
-                st.success("✅ Tratativas de Faltas conectadas direto da nuvem!")
-                
-                with st.expander("⚙️ Escolher colunas para exibir (Faltas)"):
+                    df_tratativas_faltas = carregar_excel_nuvem_turbinado(link_consolidado, "faltas").dropna(how='all').reset_index(drop=True)
+                st.success(f"✅ {len(df_tratativas_faltas)} registros de Faltas carregados do OneDrive.")
+
+                c_t4, c_t5, c_t6 = st.columns(3)
+                c_t4.metric("📋 Total de Registros", len(df_tratativas_faltas))
+                c_t5.metric("📁 Colunas Disponíveis", len(df_tratativas_faltas.columns))
+                c_t6.metric("📊 Filiais Envolvidas", df_tratativas_faltas['filial'].nunique() if 'filial' in df_tratativas_faltas.columns else "—")
+
+                with st.expander("⚙️ Escolher colunas para exibir (Faltas)", expanded=False):
                     todas_colunas_faltas = df_tratativas_faltas.columns.tolist()
                     colunas_selecionadas_faltas = st.multiselect("Selecione as colunas desejadas:", options=todas_colunas_faltas, default=todas_colunas_faltas, key="multi_faltas")
-                    
+
                 df_exibicao_faltas = df_tratativas_faltas[colunas_selecionadas_faltas]
                 st.dataframe(df_exibicao_faltas, use_container_width=True)
-                
+
             except Exception as e:
                 st.error("⚠️ Erro ao conectar com a sua planilha na nuvem.")
                 st.info(f"Detalhe técnico: {e}")
