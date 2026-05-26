@@ -402,6 +402,40 @@ elif st.session_state.get("authentication_status"):
             pdf_aba2 = gerar_pdf_dinamico("Relatorio - Somente Danos", resumo_2, top_danos)
             st.download_button("📄 Baixar Relatório: Danos (PDF)", data=pdf_aba2, file_name="Relatorio_Danos.pdf", mime="application/pdf", key="pdf_aba2")
 
+            st.write("---")
+            st.subheader("📥 Relatório Executivo para Diretoria — Top 10 Ofensores (Danos)")
+            if not df_danos.empty and 'Data_Filtro' in df_danos.columns:
+                df_danos_rep = df_danos.copy()
+                df_danos_rep['Mês'] = df_danos_rep['Data_Filtro'].dt.strftime('%m/%Y')
+                top10_mot_d = df_danos_rep.groupby('Motorista')['Quantidade'].sum().nlargest(10).index
+                df_top10_d = df_danos_rep[df_danos_rep['Motorista'].isin(top10_mot_d)]
+                tabela_dir_d = pd.pivot_table(
+                    df_top10_d,
+                    values='Quantidade',
+                    index=['Motorista', 'Filial'],
+                    columns='Mês',
+                    aggfunc='sum',
+                    fill_value=0
+                )
+                tabela_dir_d['Total'] = tabela_dir_d.sum(axis=1)
+                tabela_dir_d = tabela_dir_d.sort_values(by='Total', ascending=False)
+                st.dataframe(tabela_dir_d, use_container_width=True)
+                output_d = BytesIO()
+                with pd.ExcelWriter(output_d, engine='xlsxwriter') as writer:
+                    tabela_dir_d.to_excel(writer, sheet_name='Top 10 Ofensores - Danos')
+                    ws = writer.sheets['Top 10 Ofensores - Danos']
+                    ws.set_column('A:A', 35)
+                    ws.set_column('B:B', 25)
+                st.download_button(
+                    label="📊 Baixar Relatório Formatado (Excel)",
+                    data=output_d.getvalue(),
+                    file_name='Relatorio_Danos_Diretoria.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    key='excel_danos'
+                )
+            else:
+                st.warning("Coluna de data não disponível para gerar o relatório.")
+
         elif menu_selecionado == "Faltas":
             if not df_faltas.empty:
                 total_itens_falta = df_faltas['Quantidade'].sum()
@@ -449,6 +483,40 @@ elif st.session_state.get("authentication_status"):
                 st.dataframe(df_exibicao, use_container_width=True)
             else:
                 st.info("Nenhum dado de falta encontrado.")
+
+            st.write("---")
+            st.subheader("📥 Relatório Executivo para Diretoria — Top 10 Ofensores (Faltas)")
+            if not df_faltas.empty and 'Data_Filtro' in df_faltas.columns:
+                df_faltas_rep = df_faltas.copy()
+                df_faltas_rep['Mês'] = df_faltas_rep['Data_Filtro'].dt.strftime('%m/%Y')
+                top10_mot_f = df_faltas_rep.groupby('Motorista')['Quantidade'].sum().nlargest(10).index
+                df_top10_f = df_faltas_rep[df_faltas_rep['Motorista'].isin(top10_mot_f)]
+                tabela_dir_f = pd.pivot_table(
+                    df_top10_f,
+                    values='Quantidade',
+                    index=['Motorista', 'Filial'],
+                    columns='Mês',
+                    aggfunc='sum',
+                    fill_value=0
+                )
+                tabela_dir_f['Total'] = tabela_dir_f.sum(axis=1)
+                tabela_dir_f = tabela_dir_f.sort_values(by='Total', ascending=False)
+                st.dataframe(tabela_dir_f, use_container_width=True)
+                output_f = BytesIO()
+                with pd.ExcelWriter(output_f, engine='xlsxwriter') as writer:
+                    tabela_dir_f.to_excel(writer, sheet_name='Top 10 Ofensores - Faltas')
+                    ws = writer.sheets['Top 10 Ofensores - Faltas']
+                    ws.set_column('A:A', 35)
+                    ws.set_column('B:B', 25)
+                st.download_button(
+                    label="📊 Baixar Relatório Formatado (Excel)",
+                    data=output_f.getvalue(),
+                    file_name='Relatorio_Faltas_Diretoria.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    key='excel_faltas'
+                )
+            else:
+                st.warning("Coluna de data não disponível para gerar o relatório.")
 
         elif menu_selecionado == "Curva ABC":
             st.subheader("🎯 Curva ABC por Motorista (Reativa)")
