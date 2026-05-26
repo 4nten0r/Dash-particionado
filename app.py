@@ -9,6 +9,7 @@ from io import BytesIO
 import streamlit.components.v1 as components
 import json
 import os
+from streamlit_option_menu import option_menu
 
 # --- IMPORTANDO AS BIBLIOTECAS DE AUTENTICAÇÃO ---
 import streamlit_authenticator as stauth
@@ -245,12 +246,38 @@ elif st.session_state.get("authentication_status"):
         </div>
         """, unsafe_allow_html=True)
 
-        aba1, aba2, aba3, aba4, aba5, aba6, aba7, aba8, aba9, aba10, aba11 = st.tabs([
-            "🌐 Visão Geral", "📦 Só Danos", "📉 Só Faltas", "🎯 Curva ABC",
-            "🔄 Recor. Motorista", "🔄 Recor. Cliente", "🛣️ Rotas/Mapa", "📝 Tratativas", "🚨 Fraudes", "📋 Plano de Ação", "📈 Tendências"
-        ])
+        menu_selecionado = option_menu(
+            menu_title=None,
+            options=["Visão Geral", "Danos", "Faltas", "Curva ABC", "Motoristas", "Clientes", "Rotas", "Tratativas", "Fraudes", "Plano de Ação", "Tendências"],
+            icons=["globe", "box-seam", "graph-down-arrow", "bar-chart-steps", "truck", "people-fill", "map", "clipboard2-check", "shield-exclamation", "kanban", "graph-up-arrow"],
+            default_index=0,
+            orientation="horizontal",
+            styles={
+                "container": {
+                    "padding": "4px 0",
+                    "background-color": "#0B2E3A",
+                    "border-bottom": "1px solid rgba(255,255,255,.08)",
+                    "margin-bottom": "12px",
+                },
+                "icon": {"color": "#2DC5B4", "font-size": "16px"},
+                "nav-link": {
+                    "font-size": "12px",
+                    "font-weight": "600",
+                    "text-align": "center",
+                    "color": "rgba(255,255,255,0.55)",
+                    "--hover-color": "#1A5A68",
+                    "border-radius": "6px",
+                    "padding": "6px 10px",
+                },
+                "nav-link-selected": {
+                    "background-color": "#1A8090",
+                    "color": "#ffffff",
+                    "border-radius": "6px",
+                },
+            },
+        )
 
-        with aba1:
+        if menu_selecionado == "Visão Geral":
             if total_ocorrencias > 0:
                 taxa_dano = len(df_danos) / total_ocorrencias
                 taxa_falta = len(df_faltas) / total_ocorrencias
@@ -322,7 +349,7 @@ elif st.session_state.get("authentication_status"):
             pdf_aba1 = gerar_pdf_dinamico("Relatorio - Visao Geral", resumo_1, top_geral)
             st.download_button("📄 Baixar Relatório: Visão Geral (PDF)", data=pdf_aba1, file_name="Visao_Geral.pdf", mime="application/pdf", key="pdf_aba1")
 
-        with aba2:
+        elif menu_selecionado == "Danos":
             if not df_danos.empty:
                 total_itens_dano = df_danos['Quantidade'].sum()
                 total_ocorrencias_dano = len(df_danos)
@@ -375,7 +402,7 @@ elif st.session_state.get("authentication_status"):
             pdf_aba2 = gerar_pdf_dinamico("Relatorio - Somente Danos", resumo_2, top_danos)
             st.download_button("📄 Baixar Relatório: Danos (PDF)", data=pdf_aba2, file_name="Relatorio_Danos.pdf", mime="application/pdf", key="pdf_aba2")
 
-        with aba3:
+        elif menu_selecionado == "Faltas":
             if not df_faltas.empty:
                 total_itens_falta = df_faltas['Quantidade'].sum()
                 total_ocorrencias_falta = len(df_faltas)
@@ -396,57 +423,6 @@ elif st.session_state.get("authentication_status"):
                 fig_m = px.bar(df_mot_falta, x='Quantidade', y='Motorista', orientation='h', color='Quantidade', color_continuous_scale=dias_red_scale, text_auto='.0f', hover_data=['Filial'])
                 fig_m.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
                 st.plotly_chart(fig_m, use_container_width=True)
-                
-                # =====================================================================
-                # INÍCIO - BOTÃO RELATÓRIO EXECUTIVO EXCEL (DIRETORIA)
-                # =====================================================================
-                import io
-                st.markdown("#### 📥 Relatório Executivo para Diretoria")
-                
-                # Usamos a Data_Filtro (que vem lá da barra lateral) para extrair o Mês
-                if 'Data_Filtro' in df_faltas.columns:
-                    df_faltas_report = df_faltas.copy()
-                    df_faltas_report['Mês'] = df_faltas_report['Data_Filtro'].dt.strftime('%m/%Y')
-                    
-                    # Filtra a base original para manter apenas os 10 motoristas já calculados no gráfico acima
-                    df_top10_rep = df_faltas_report[df_faltas_report['Motorista'].isin(df_mot_falta['Motorista'])]
-                    
-                    # Cria a Tabela Dinâmica cruzando Motorista/Filial x Meses
-                    tabela_diretoria = pd.pivot_table(
-                        df_top10_rep,
-                        values='Quantidade',
-                        index=['Motorista', 'Filial'],
-                        columns='Mês',
-                        aggfunc='sum',
-                        fill_value=0
-                    )
-                    
-                    # Adiciona a coluna Total e ordena
-                    tabela_diretoria['Total'] = tabela_diretoria.sum(axis=1)
-                    tabela_diretoria = tabela_diretoria.sort_values(by='Total', ascending=False)
-                    
-                    # Gera o Excel em memória
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                        tabela_diretoria.to_excel(writer, sheet_name='Top 10 Ofensores')
-                        # Ajuste estético da largura das colunas no Excel
-                        worksheet = writer.sheets['Top 10 Ofensores']
-                        worksheet.set_column('A:A', 35)
-                        worksheet.set_column('B:B', 25)
-                    
-                    excel_data = output.getvalue()
-                    
-                    st.download_button(
-                        label="📊 Baixar Visão Mensal Formatada (Excel)",
-                        data=excel_data,
-                        file_name='Relatorio_Diretoria_Top10_Faltas.xlsx',
-                        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                    )
-                else:
-                    st.warning("A coluna 'Data_Filtro' não foi encontrada. O relatório não pôde ser gerado.")
-                # =====================================================================
-                # FIM - BOTÃO RELATÓRIO EXECUTIVO EXCEL
-                # =====================================================================
                 
                 st.write("---")
 
@@ -474,7 +450,7 @@ elif st.session_state.get("authentication_status"):
             else:
                 st.info("Nenhum dado de falta encontrado.")
 
-        with aba4:
+        elif menu_selecionado == "Curva ABC":
             st.subheader("🎯 Curva ABC por Motorista (Reativa)")
             fig_abc, df_abc = plot_curva_abc(df_uni)
             if fig_abc:
@@ -487,7 +463,7 @@ elif st.session_state.get("authentication_status"):
             pdf_aba4 = gerar_pdf_dinamico("Relatorio - Curva ABC", resumo_4, df_abc)
             st.download_button("📄 Baixar Relatório: Curva ABC (PDF)", data=pdf_aba4, file_name="Curva_ABC.pdf", mime="application/pdf", key="pdf_aba4")
 
-        with aba5:
+        elif menu_selecionado == "Motoristas":
             st.subheader("🔄 Histórico Mensal de Ofensores (Motoristas)")
             if not df_uni.empty:
                 df_mot_valido = df_uni[~df_uni['Motorista'].str.upper().isin(['NÃO IDENTIFICADO', 'NAN', '', 'N/A'])].copy()
@@ -524,7 +500,7 @@ elif st.session_state.get("authentication_status"):
             pdf_aba5 = gerar_pdf_dinamico("Dossiê - Motoristas Críticos", resumo_5, df_resumo_mot if df_resumo_mot is not None else None)
             st.download_button("📄 Baixar Relatório: Recor. Motorista (PDF)", data=pdf_aba5, file_name="Recorrencia_Motoristas.pdf", mime="application/pdf", key="pdf_aba5")
 
-        with aba6:
+        elif menu_selecionado == "Clientes":
             st.subheader("🔄 Histórico Mensal de Clientes Reincidentes")
             if not df_uni.empty:
                 df_cli_valido = df_uni[~df_uni['Cliente'].str.upper().isin(['NÃO IDENTIFICADO', 'NAN', '', 'N/A'])].copy()
@@ -562,7 +538,7 @@ elif st.session_state.get("authentication_status"):
             pdf_aba6 = gerar_pdf_dinamico("Dossie - Clientes Criticos", resumo_6, df_resumo_cli if df_resumo_cli is not None else None)
             st.download_button("📄 Baixar Relatório: Recor. Cliente (PDF)", data=pdf_aba6, file_name="Recorrencia_Clientes.pdf", mime="application/pdf", key="pdf_aba6")
 
-        with aba7:
+        elif menu_selecionado == "Rotas":
             st.subheader("📍 Detalhamento e Inteligência por Rota")
             coluna_rota_real = None
             for col in df_uni.columns:
@@ -638,8 +614,7 @@ elif st.session_state.get("authentication_status"):
             else:
                 st.error("Aviso: A coluna de rotas não foi encontrada na base de dados principal.")
                 
-        # (Demais abas permanecem com sua estrutura lógica mantida, sendo cobertas pelos padrões de cor CSS injetados no início do código)
-        with aba8:
+        elif menu_selecionado == "Tratativas":
             st.subheader("📝 Controle de Tratativas")
             link_consolidado = "https://1drv.ms/x/c/6b2fcbf5f5526df1/IQDtrkuc6eIKQKQh9HsI07EUAaJNoPcRiVDIdVI_xUAMCUQ?download=1"
 
@@ -689,7 +664,7 @@ elif st.session_state.get("authentication_status"):
             pdf_aba8 = gerar_pdf_dinamico("Controle de Tratativas (Nuvem)", resumo_8, df_pdf_8)
             st.download_button(label="📄 Baixar Relatório: Tratativas (PDF)", data=pdf_aba8, file_name="Controle_Tratativas.pdf", mime="application/pdf", key="pdf_aba8")
 
-        with aba9:
+        elif menu_selecionado == "Fraudes":
             st.subheader("🚨 Dossiê de Fraudes")
             alertas = pd.DataFrame()
             
@@ -743,7 +718,7 @@ elif st.session_state.get("authentication_status"):
                 else: 
                     st.success("✅ Tudo limpo no filtro atual.")
 
-        with aba10:
+        elif menu_selecionado == "Plano de Ação":
             st.subheader("📋 Plano de Ação e Diretrizes")
             st.markdown("Siga rigorosamente as ações abaixo para mitigação de desvios e auditoria obrigatória.")
             try: st.image("plano.jpg", use_container_width=True)
@@ -754,7 +729,7 @@ elif st.session_state.get("authentication_status"):
             pdf_aba10 = gerar_pdf_dinamico("Plano de Acao Logistico", resumo_10, None)
             st.download_button("📄 Baixar Relatório: Plano (PDF)", data=pdf_aba10, file_name="Plano_Acao.pdf", mime="application/pdf", key="pdf_aba10")
 
-        with aba11:
+        elif menu_selecionado == "Tendências":
             st.subheader("📈 Análise de Tendências Temporais")
             
             # --- NOVO GRÁFICO: VISÃO CLARA DOS PIORES PERÍODOS ---
