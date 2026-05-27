@@ -849,7 +849,7 @@ elif st.session_state.get("authentication_status"):
                 
         elif menu_selecionado == "Tratativas":
             st.subheader("📝 Controle de Tratativas")
-            link_consolidado = "https://1drv.ms/x/c/6b2fcbf5f5526df1/IQAkogaUQl8WTI5vjVGhVEuHAYAoy8rXL4WGJjqjas3VsA8?download=1"
+            link_consolidado = "https://1drv.ms/x/c/6b2fcbf5f5526df1/IQAX1_shUwFtTbYnq2I7g1OmAU8_f4Pj8KdHIfAYBHf3Euo?download=1"
 
             st.markdown("### 📦 Tratativas - Danos")
             df_exibicao_danos = None
