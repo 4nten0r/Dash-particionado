@@ -849,8 +849,9 @@ elif st.session_state.get("authentication_status"):
                 
         elif menu_selecionado == "Tratativas":
     st.subheader("📝 Controle de Tratativas")
-    # Link formatado para exportar como Excel automaticamente
-    link_consolidado = "https://docs.google.com/spreadsheets/d/12PurxfsZrm7YH8VP3EU2kyIJ-G7cVbt_CEj2l8cXsJQ/export?format=xlsx"
+    link_consolidado = "https://docs.google.com/spreadsheets/d/12PurxfsZrm7YH8VP3EU2kyIJ-G7cVbt_CEj2l8cXsJQ/edit?usp=sharing"
+    
+    st.link_button("Abrir Planilha de Tratativas", link_consolidado)
 
             st.markdown("### 📦 Tratativas - Danos")
             df_exibicao_danos = None
