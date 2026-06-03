@@ -849,14 +849,14 @@ elif st.session_state.get("authentication_status"):
                 
         elif menu_selecionado == "Tratativas":
             st.subheader("📝 Controle de Tratativas")
-            link_consolidado = "https://1drv.ms/x/c/6b2fcbf5f5526df1/IQAX1_shUwFtTbYnq2I7g1OmAU8_f4Pj8KdHIfAYBHf3Euo?download=1"
+            link_consolidado = "https://docs.google.com/spreadsheets/d/12PurxfsZrm7YH8VP3EU2kyIJ-G7cVbt_CEj2l8cXsJQ/export?format=xlsx"
 
             st.markdown("### 📦 Tratativas - Danos")
             df_exibicao_danos = None
             
             try:
                 with st.spinner("Sincronizando Danos com o OneDrive..."):
-                    df_tratativas_danos = carregar_excel_nuvem_turbinado(link_consolidado, "Danos").dropna(how='all').reset_index(drop=True)
+                    df_tratativas_danos = carregar_excel_nuvem_turbinado(link_consolidado, "danos").dropna(how='all').reset_index(drop=True)
                 st.success(f"✅ {len(df_tratativas_danos)} registros de Danos carregados do OneDrive.")
 
                 c_t1, c_t2, c_t3 = st.columns(3)
@@ -882,7 +882,7 @@ elif st.session_state.get("authentication_status"):
             
             try:
                 with st.spinner("Sincronizando Faltas com o OneDrive..."):
-                    df_tratativas_faltas = carregar_excel_nuvem_turbinado(link_consolidado, "Faltas").dropna(how='all').reset_index(drop=True)
+                    df_tratativas_faltas = carregar_excel_nuvem_turbinado(link_consolidado, "faltas").dropna(how='all').reset_index(drop=True)
                 st.success(f"✅ {len(df_tratativas_faltas)} registros de Faltas carregados do OneDrive.")
 
                 c_t4, c_t5, c_t6 = st.columns(3)
