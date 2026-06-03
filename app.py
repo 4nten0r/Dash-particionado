@@ -849,66 +849,72 @@ elif st.session_state.get("authentication_status"):
                 
         elif menu_selecionado == "Tratativas":
     st.subheader("📝 Controle de Tratativas")
-    link_consolidado = "https://docs.google.com/spreadsheets/d/12PurxfsZrm7YH8VP3EU2kyIJ-G7cVbt_CEj2l8cXsJQ/edit?usp=sharing"
     
-    st.link_button("Abrir Planilha de Tratativas", link_consolidado)
+    # Link visual para o usuário abrir no navegador
+    link_visualizacao = "https://docs.google.com/spreadsheets/d/12PurxfsZrm7YH8VP3EU2kyIJ-G7cVbt_CEj2l8cXsJQ/edit?usp=sharing"
+    
+    # Link técnico em formato XLSX para o Pandas conseguir ler as abas "Danos" e "Faltas"
+    link_download = "https://docs.google.com/spreadsheets/d/12PurxfsZrm7YH8VP3EU2kyIJ-G7cVbt_CEj2l8cXsJQ/export?format=xlsx"
+    
+    st.link_button("Abrir Planilha de Tratativas", link_visualizacao)
 
-            st.markdown("### 📦 Tratativas - Danos")
-            df_exibicao_danos = None
-            
-            try:
-                with st.spinner("Sincronizando Danos com o OneDrive..."):
-                    df_tratativas_danos = carregar_excel_nuvem_turbinado(link_consolidado, "Danos").dropna(how='all').reset_index(drop=True)
-                st.success(f"✅ {len(df_tratativas_danos)} registros de Danos carregados do OneDrive.")
+    st.markdown("### 📦 Tratativas - Danos")
+    df_exibicao_danos = None
+    
+    try:
+        with st.spinner("Sincronizando Danos com o Google Sheets..."):
+            # Usando o link_download aqui
+            df_tratativas_danos = carregar_excel_nuvem_turbinado(link_download, "Danos").dropna(how='all').reset_index(drop=True)
+        st.success(f"✅ {len(df_tratativas_danos)} registros de Danos carregados do Google Sheets.")
 
-                c_t1, c_t2, c_t3 = st.columns(3)
-                c_t1.metric("📋 Total de Registros", len(df_tratativas_danos))
-                c_t2.metric("📁 Colunas Disponíveis", len(df_tratativas_danos.columns))
-                c_t3.metric("📊 Filiais Envolvidas", df_tratativas_danos['filial'].nunique() if 'filial' in df_tratativas_danos.columns else "—")
+        c_t1, c_t2, c_t3 = st.columns(3)
+        c_t1.metric("📋 Total de Registros", len(df_tratativas_danos))
+        c_t2.metric("📁 Colunas Disponíveis", len(df_tratativas_danos.columns))
+        c_t3.metric("📊 Filiais Envolvidas", df_tratativas_danos['filial'].nunique() if 'filial' in df_tratativas_danos.columns else "—")
 
-                with st.expander("⚙️ Escolher colunas para exibir (Danos)", expanded=False):
-                    todas_colunas_danos = df_tratativas_danos.columns.tolist()
-                    colunas_selecionadas_danos = st.multiselect("Selecione as colunas desejadas:", options=todas_colunas_danos, default=todas_colunas_danos, key="multi_danos")
+        with st.expander("⚙️ Escolher colunas para exibir (Danos)", expanded=False):
+            todas_colunas_danos = df_tratativas_danos.columns.tolist()
+            colunas_selecionadas_danos = st.multiselect("Selecione as colunas desejadas:", options=todas_colunas_danos, default=todas_colunas_danos, key="multi_danos")
 
-                df_exibicao_danos = df_tratativas_danos[colunas_selecionadas_danos]
-                st.dataframe(df_exibicao_danos, use_container_width=True)
+        df_exibicao_danos = df_tratativas_danos[colunas_selecionadas_danos]
+        st.dataframe(df_exibicao_danos, use_container_width=True)
 
-            except Exception as e:
-                st.warning("⏳ Falha ao carregar a nuvem. Aguardando a verificação do link público.")
-                st.info(f"Detalhe técnico: {e}")
+    except Exception as e:
+        st.warning("⏳ Falha ao carregar a nuvem. Verifique as permissões do link.")
+        st.info(f"Detalhe técnico: {e}")
 
-            st.write("---") 
+    st.write("---") 
 
-            st.markdown("### 🛍️ Tratativas - Faltas")
-            df_exibicao_faltas = None
-            
-            try:
-                with st.spinner("Sincronizando Faltas com o OneDrive..."):
-                    df_tratativas_faltas = carregar_excel_nuvem_turbinado(link_consolidado, "Faltas").dropna(how='all').reset_index(drop=True)
-                st.success(f"✅ {len(df_tratativas_faltas)} registros de Faltas carregados do OneDrive.")
+    st.markdown("### 🛍️ Tratativas - Faltas")
+    df_exibicao_faltas = None
+    
+    try:
+        with st.spinner("Sincronizando Faltas com o Google Sheets..."):
+            # Usando o link_download aqui também
+            df_tratativas_faltas = carregar_excel_nuvem_turbinado(link_download, "Faltas").dropna(how='all').reset_index(drop=True)
+        st.success(f"✅ {len(df_tratativas_faltas)} registros de Faltas carregados do Google Sheets.")
 
-                c_t4, c_t5, c_t6 = st.columns(3)
-                c_t4.metric("📋 Total de Registros", len(df_tratativas_faltas))
-                c_t5.metric("📁 Colunas Disponíveis", len(df_tratativas_faltas.columns))
-                c_t6.metric("📊 Filiais Envolvidas", df_tratativas_faltas['filial'].nunique() if 'filial' in df_tratativas_faltas.columns else "—")
+        c_t4, c_t5, c_t6 = st.columns(3)
+        c_t4.metric("📋 Total de Registros", len(df_tratativas_faltas))
+        c_t5.metric("📁 Colunas Disponíveis", len(df_tratativas_faltas.columns))
+        c_t6.metric("📊 Filiais Envolvidas", df_tratativas_faltas['filial'].nunique() if 'filial' in df_tratativas_faltas.columns else "—")
 
-                with st.expander("⚙️ Escolher colunas para exibir (Faltas)", expanded=False):
-                    todas_colunas_faltas = df_tratativas_faltas.columns.tolist()
-                    colunas_selecionadas_faltas = st.multiselect("Selecione as colunas desejadas:", options=todas_colunas_faltas, default=todas_colunas_faltas, key="multi_faltas")
+        with st.expander("⚙️ Escolher colunas para exibir (Faltas)", expanded=False):
+            todas_colunas_faltas = df_tratativas_faltas.columns.tolist()
+            colunas_selecionadas_faltas = st.multiselect("Selecione as colunas desejadas:", options=todas_colunas_faltas, default=todas_colunas_faltas, key="multi_faltas")
 
-                df_exibicao_faltas = df_tratativas_faltas[colunas_selecionadas_faltas]
-                st.dataframe(df_exibicao_faltas, use_container_width=True)
+        df_exibicao_faltas = df_tratativas_faltas[colunas_selecionadas_faltas]
+        st.dataframe(df_exibicao_faltas, use_container_width=True)
 
-            except Exception as e:
-                st.error("⚠️ Erro ao conectar com a sua planilha na nuvem.")
-                st.info(f"Detalhe técnico: {e}")
-                
-            st.write("---")
-            resumo_8 = ["Extracao rapida do controle online de tratativas e ressarcimentos."]
-            df_pdf_8 = df_exibicao_danos if df_exibicao_danos is not None else df_exibicao_faltas
-            pdf_aba8 = gerar_pdf_dinamico("Controle de Tratativas (Nuvem)", resumo_8, df_pdf_8)
-            st.download_button(label="📄 Baixar Relatório: Tratativas (PDF)", data=pdf_aba8, file_name="Controle_Tratativas.pdf", mime="application/pdf", key="pdf_aba8")
-
+    except Exception as e:
+        st.error("⚠️ Erro ao conectar com a sua planilha na nuvem.")
+        st.info(f"Detalhe técnico: {e}")
+        
+    st.write("---")
+    resumo_8 = ["Extracao rapida do controle online de tratativas e ressarcimentos."]
+    df_pdf_8 = df_exibicao_danos if df_exibicao_danos is not None else df_exibicao_faltas
+    pdf_aba8 = gerar_pdf_dinamico("Controle de Tratativas (Nuvem)", resumo_8, df_pdf_8)
+    st.download_button(label="📄 Baixar Relatório: Tratativas (PDF)", data=pdf_aba8, file_name="Controle_Tratativas.pdf", mime="application/pdf", key="pdf_aba8")
         elif menu_selecionado == "Alertas Operacionais":
             st.subheader("⚠️ Alertas Operacionais — Análise de Anomalias")
 
