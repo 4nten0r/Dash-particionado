@@ -848,8 +848,9 @@ elif st.session_state.get("authentication_status"):
                 st.error("Aviso: A coluna de rotas não foi encontrada na base de dados principal.")
                 
         elif menu_selecionado == "Tratativas":
-            st.subheader("📝 Controle de Tratativas")
-            link_consolidado = "https://1drv.ms/x/c/6b2fcbf5f5526df1/IQAX1_shUwFtTbYnq2I7g1OmAU8_f4Pj8KdHIfAYBHf3Euo?download=1"
+    st.subheader("📝 Controle de Tratativas")
+    # Link formatado para exportar como CSV automaticamente
+    link_consolidado = "https://docs.google.com/spreadsheets/d/12PurxfsZrm7YH8VP3EU2kyIJ-G7cVbt_CEj2l8cXsJQ/export?format=csv"
 
             st.markdown("### 📦 Tratativas - Danos")
             df_exibicao_danos = None
