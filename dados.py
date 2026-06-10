@@ -2,6 +2,12 @@ import streamlit as st
 import pandas as pd
 import logging
 
+
+def _norm_chave(serie):
+    """Padroniza chaves de cruzamento (pedido/rota): texto, sem '.0' e sem espaços."""
+    return serie.astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+
+
 @st.cache_data(ttl=300, show_spinner="Carregando bases de dados...")
 def load_data():
     mapa_meses_num = {
@@ -90,10 +96,20 @@ def load_data():
     # ==========================================
     # 4. CARREGAR MAPAS
     # ==========================================
+    df_ped_geo = pd.DataFrame()
     try:
         df_notas = pd.read_csv("relatorionotas.csv", sep=";", encoding="latin-1", skiprows=7)
         df_falta = pd.read_csv("relatorionotas_falta.csv", sep=";", encoding="latin-1", skiprows=7)
         df_ref = pd.concat([df_notas, df_falta], ignore_index=True)
+
+        # Mapa Pedido -> Cidade/Bairro (cruzamento confiável: 100% das ocorrencias batem por pedido,
+        # ao contrario da Rota, cuja codificacao difere entre Natura e Diaslog)
+        if 'Pedido' in df_ref.columns and 'Cidade' in df_ref.columns:
+            df_ped_geo = df_ref[['Pedido', 'Cidade', 'Bairro']].copy()
+            df_ped_geo['Pedido'] = _norm_chave(df_ped_geo['Pedido'])
+            df_ped_geo = df_ped_geo[df_ped_geo['Pedido'].ne('') & df_ped_geo['Pedido'].ne('nan')]
+            # 1 linha por pedido, priorizando registros com Cidade preenchida
+            df_ped_geo = df_ped_geo.sort_values('Cidade', na_position='last').drop_duplicates(subset=['Pedido'], keep='first')
 
         if 'Rota' in df_ref.columns:
             df_geo = df_ref[['Rota', 'Cidade', 'Bairro', 'LATITUDE', 'LONGITUDE']].dropna(subset=['Rota'])
@@ -117,6 +133,27 @@ def load_data():
         logging.warning(f"Aviso ao carregar mapas geográficos: {e}")
         st.warning("⚠️ Os arquivos de notas ('relatorionotas.csv' ou 'relatorionotas_falta.csv') não puderam ser carregados corretamente. As abas de mapa podem estar limitadas.")
         df_coord_agg, df_mapa_agg = pd.DataFrame(), pd.DataFrame()
+
+    # ==========================================
+    # 4b. ENRIQUECER OCORRÊNCIAS COM CIDADE/BAIRRO (POR PEDIDO)
+    # ==========================================
+    def _enriquecer_geo(df):
+        if df.empty or 'Pedido' not in df.columns:
+            return df
+        if df_ped_geo.empty:
+            df['Cidade'] = 'Não Identificada'
+            df['Bairro'] = 'Não Identificado'
+            return df
+        chave = _norm_chave(df['Pedido'])
+        mapa_cid = dict(zip(df_ped_geo['Pedido'], df_ped_geo['Cidade']))
+        mapa_bai = dict(zip(df_ped_geo['Pedido'], df_ped_geo['Bairro']))
+        df['Cidade'] = chave.map(mapa_cid).fillna('Não Identificada')
+        df['Bairro'] = chave.map(mapa_bai).fillna('Não Identificado')
+        return df
+
+    df_danos = _enriquecer_geo(df_danos)
+    df_faltas = _enriquecer_geo(df_faltas)
+    df_unificado = _enriquecer_geo(df_unificado)
 
     # ==========================================
     # 5. CARREGAR TRATATIVAS LOCAIS

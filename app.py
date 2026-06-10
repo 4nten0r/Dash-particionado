@@ -666,30 +666,35 @@ elif st.session_state.get("authentication_status"):
 
         elif menu_selecionado == "Rotas":
             st.subheader("📍 Detalhamento e Inteligência por Rota")
-            coluna_rota_real = None
-            for col in df_uni.columns:
-                if col.lower() == 'rota':
-                    coluna_rota_real = col
-                    break
-                    
+
+            coluna_rota_real = next((c for c in df_uni.columns if c.lower() == 'rota'), None)
+            tem_geo = 'Cidade' in df_uni.columns and 'Bairro' in df_uni.columns
+
+            # ---- TABELA DE OFENSORES POR ROTA ----
             if coluna_rota_real:
                 if not df_danos.empty and coluna_rota_real in df_danos.columns:
                     df_danos_rota = df_danos.groupby(coluna_rota_real)['Quantidade'].sum().reset_index(name='Qtd_Danos')
                 else: df_danos_rota = pd.DataFrame(columns=[coluna_rota_real, 'Qtd_Danos'])
-                    
+
                 if not df_faltas.empty and coluna_rota_real in df_faltas.columns:
                     df_faltas_rota = df_faltas.groupby(coluna_rota_real)['Quantidade'].sum().reset_index(name='Qtd_Faltas')
                 else: df_faltas_rota = pd.DataFrame(columns=[coluna_rota_real, 'Qtd_Faltas'])
-                    
+
                 df_resumo_rotas = pd.merge(df_danos_rota, df_faltas_rota, on=coluna_rota_real, how='outer').fillna(0)
                 df_resumo_rotas['Qtd_Danos'] = df_resumo_rotas['Qtd_Danos'].astype(int)
                 df_resumo_rotas['Qtd_Faltas'] = df_resumo_rotas['Qtd_Faltas'].astype(int)
                 df_resumo_rotas['Total_Volume'] = df_resumo_rotas['Qtd_Danos'] + df_resumo_rotas['Qtd_Faltas']
                 df_resumo_rotas['rota_padrao'] = df_resumo_rotas[coluna_rota_real].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
 
-                if not df_mapa_agg.empty:
-                    df_mapa_agg['Rota'] = df_mapa_agg['Rota'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
-                    df_final = pd.merge(df_resumo_rotas, df_mapa_agg, left_on='rota_padrao', right_on='Rota', how='left')
+                # Cidade/Bairro predominante por rota — a partir das ocorrências já enriquecidas por PEDIDO
+                if tem_geo:
+                    def _moda_geo(s):
+                        m = s[~s.isin(['Não Identificada', 'Não Identificado'])].mode()
+                        return m.iloc[0] if not m.empty else 'Não Identificado'
+                    geo_rota = df_uni.copy()
+                    geo_rota['rota_padrao'] = geo_rota[coluna_rota_real].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+                    geo_rota = geo_rota.groupby('rota_padrao').agg(Cidade=('Cidade', _moda_geo), Bairro=('Bairro', _moda_geo)).reset_index()
+                    df_final = pd.merge(df_resumo_rotas, geo_rota, on='rota_padrao', how='left')
                     df_final['Cidade'] = df_final['Cidade'].fillna('Não Identificada')
                     df_final['Bairro'] = df_final['Bairro'].fillna('Não Identificado')
                 else:
@@ -701,44 +706,53 @@ elif st.session_state.get("authentication_status"):
 
                 st.markdown("### 📋 Tabela de Ofensores por Rota")
                 colunas_exibicao = ['rota_padrao', 'Cidade', 'Bairro', 'Qtd_Danos', 'Qtd_Faltas', 'Total_Volume']
-                df_exibicao = df_final[[c for c in colunas_exibicao if c in df_final.columns]].rename(columns={'rota_padrao': 'Rota'}).copy()
+                df_exibicao = df_final[[c for c in colunas_exibicao if c in df_final.columns]].rename(
+                    columns={'rota_padrao': 'Rota', 'Qtd_Danos': 'Danos', 'Qtd_Faltas': 'Faltas', 'Total_Volume': 'Total'}).copy()
                 st.dataframe(df_exibicao, use_container_width=True)
-
-                st.write("---")
-                st.markdown("### 🌍 Inteligência Geográfica de Ocorrências")
-                df_geo = df_uni.copy()
-                
-                if not df_mapa_agg.empty:
-                    df_geo['rota_padrao'] = df_geo[coluna_rota_real].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
-                    df_mapa_agg_clean = df_mapa_agg.copy()
-                    df_mapa_agg_clean['Rota'] = df_mapa_agg_clean['Rota'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
-                    
-                    df_geo = pd.merge(df_geo, df_mapa_agg_clean[['Rota', 'Cidade', 'Bairro']], left_on='rota_padrao', right_on='Rota', how='left')
-                    df_geo['Cidade'] = df_geo['Cidade'].fillna('Não Identificada')
-                    df_geo['Bairro'] = df_geo['Bairro'].fillna('Não Identificado')
-                    df_geo = df_geo[df_geo['Quantidade'] > 0]
-
-                    col_cid, col_bai = st.columns(2)
-                    with col_cid:
-                        st.markdown("#### 🏆 Top 10 Cidades Críticas")
-                        top_cidades = df_geo.groupby('Cidade')['Quantidade'].sum().nlargest(10).reset_index()
-                        fig_cid = px.bar(top_cidades, x='Quantidade', y='Cidade', orientation='h', color='Quantidade', color_continuous_scale=dias_teal_scale, text_auto='.0f')
-                        fig_cid.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
-                        st.plotly_chart(fig_cid, use_container_width=True)
-
-                    with col_bai:
-                        st.markdown("#### 🚨 Top 10 Bairros Críticos")
-                        df_bairros = df_geo[df_geo['Bairro'] != 'Não Identificado']
-                        top_bairros = df_bairros.groupby('Bairro')['Quantidade'].sum().nlargest(10).reset_index()
-                        fig_bai = px.bar(top_bairros, x='Quantidade', y='Bairro', orientation='h', color='Quantidade', color_continuous_scale=dias_red_scale, text_auto='.0f')
-                        fig_bai.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
-                        st.plotly_chart(fig_bai, use_container_width=True)
-
-                else:
-                    st.warning("⚠️ Para visualizar a inteligência geográfica, as informações do arquivo 'relatorionotas.csv' precisam estar carregadas corretamente.")
-
             else:
                 st.error("Aviso: A coluna de rotas não foi encontrada na base de dados principal.")
+
+            # ---- INTELIGÊNCIA GEOGRÁFICA (Geral / Danos / Faltas) ----
+            st.write("---")
+            st.markdown("### 🌍 Inteligência Geográfica de Ocorrências")
+
+            if tem_geo:
+                def _render_top_geo(dfx, escala_cid, escala_bai, prefixo):
+                    dfx = dfx[dfx['Quantidade'] > 0]
+                    if dfx.empty:
+                        st.info("Sem ocorrências para esta seleção.")
+                        return
+                    col_cid, col_bai = st.columns(2)
+                    with col_cid:
+                        st.markdown("#### 🏆 Top 10 Cidades")
+                        base_cid = dfx[dfx['Cidade'] != 'Não Identificada']
+                        top_cidades = base_cid.groupby('Cidade')['Quantidade'].sum().nlargest(10).reset_index()
+                        if not top_cidades.empty:
+                            fig_cid = px.bar(top_cidades, x='Quantidade', y='Cidade', orientation='h', color='Quantidade', color_continuous_scale=escala_cid, text_auto='.0f')
+                            fig_cid.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
+                            st.plotly_chart(fig_cid, use_container_width=True, key=f"{prefixo}_cid")
+                        else:
+                            st.info("Sem cidades identificadas.")
+                    with col_bai:
+                        st.markdown("#### 🚨 Top 10 Bairros")
+                        base_bai = dfx[dfx['Bairro'] != 'Não Identificado']
+                        top_bairros = base_bai.groupby('Bairro')['Quantidade'].sum().nlargest(10).reset_index()
+                        if not top_bairros.empty:
+                            fig_bai = px.bar(top_bairros, x='Quantidade', y='Bairro', orientation='h', color='Quantidade', color_continuous_scale=escala_bai, text_auto='.0f')
+                            fig_bai.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
+                            st.plotly_chart(fig_bai, use_container_width=True, key=f"{prefixo}_bai")
+                        else:
+                            st.info("Sem bairros identificados.")
+
+                aba_geral, aba_danos, aba_faltas = st.tabs(["📊 Geral", "📦 Danos", "📉 Faltas"])
+                with aba_geral:
+                    _render_top_geo(df_uni, dias_teal_scale, dias_red_scale, "geo_geral")
+                with aba_danos:
+                    _render_top_geo(df_danos, dias_teal_scale, dias_teal_scale, "geo_danos")
+                with aba_faltas:
+                    _render_top_geo(df_faltas, dias_red_scale, dias_red_scale, "geo_faltas")
+            else:
+                st.warning("⚠️ Para visualizar a inteligência geográfica, o arquivo 'relatorionotas.csv' precisa estar carregado corretamente.")
                 
         elif menu_selecionado == "Tratativas":
             st.subheader("📝 Controle de Tratativas")
