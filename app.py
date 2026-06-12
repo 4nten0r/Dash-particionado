@@ -895,14 +895,91 @@ elif st.session_state.get("authentication_status"):
                     st.success("✅ Nenhuma anomalia detectada com os parâmetros atuais.")
 
         elif menu_selecionado == "Plano de Ação":
-            st.subheader("📋 Plano de Ação e Diretrizes")
-            st.markdown("Siga rigorosamente as ações abaixo para mitigação de desvios e auditoria obrigatória.")
-            try: st.image("plano.jpg", use_container_width=True)
-            except Exception: st.error("⚠️ Arquivo 'plano.jpg' não encontrado.")
-                
+            st.subheader("📋 Plano de Ação — Danos & Faltas | Cliente Natura")
+            st.markdown("Plano padrão para todas as filiais. O que a Dias+ está fazendo, como transportadora, para evitar danos e faltas.")
+
+            # Frentes: (nº, título, tag, classe_tag, descrição, meta/por-que, [ações])
+            _TAGS = {"df": ("Danos + Faltas", "rgba(45,197,180,.15)", "#2DC5B4"),
+                     "f":  ("Faltas",        "rgba(91,168,184,.18)", "#5BA8B8"),
+                     "d":  ("Danos",         "rgba(196,122,119,.20)", "#C47A77")}
+            _frentes = [
+                (1, "Roteirizador de galpão", "df",
+                 "Delimita a área por onde cada motorista circula dentro do galpão. O agregado deixa de montar o próprio palete e passa apenas a carregar o veículo na doca definida.",
+                 "Menos vezes que a caixa é manuseada, menos acesso a áreas restritas e menos tempo no galpão — cortando troca de itens e avarias na separação.", None),
+                (2, "Treinamento e integração de agregados", "df",
+                 "Capacitação recorrente em manuseio correto, carregamento, identificação de carga frágil e conferência antes da saída. Todo novo agregado passa obrigatoriamente por treinamento de integração antes de iniciar as entregas — ninguém roda sem capacitação prévia.",
+                 "Integração obrigatória na entrada + reciclagem periódica. Responsável: Coordenação de cada filial.", None),
+                (3, "Conferência e checklist no carregamento", "f",
+                 "Dupla conferência de volumes por pedido na expedição, com checklist assinado antes da liberação do veículo.",
+                 "Garante que o nº de volumes carregados bate com a nota — ataca a causa-raiz de itens faltantes na entrega.", None),
+                (4, "Limites de carga parametrizados", "d",
+                 "Regras já programadas no Roteirizador: limite máximo de caixas por veículo e limite de empilhamento no palete — até 8 caixas de altura em carga sem movimentação e 5 caixas em carga de grande movimentação.",
+                 "Evita sobrepeso e esmagamento das caixas de baixo — o próprio sistema bloqueia o excesso, sem depender de julgamento no carregamento.", None),
+                (5, "Indicadores e metas por filial", "df",
+                 "Acompanhamento mensal de danos e faltas por filial em dashboard, com tratativa individual dos ofensores e meta de redução.",
+                 "Meta padrão: reduzir ocorrências mês a mês, priorizando as filiais de maior volume. Tratativa formal para todo ofensor reincidente.", None),
+                (6, "Recrutamento de motoristas — força-tarefa", "df",
+                 "Força-tarefa da Dias+ dedicada à contratação de novos motoristas para substituir os agregados ofensores reincidentes identificados no acompanhamento de indicadores.",
+                 "Renova a base de motoristas com profissionais alinhados às boas práticas, atacando a causa-raiz quando treinamento e tratativa já não resolvem o ofensor.", None),
+                (7, "Rotas ofensoras", "f",
+                 "<b>Objetivo:</b> interromper imediatamente os desvios massivos nas rotas críticas.", None,
+                 ["Substituição dos motoristas envolvidos;",
+                  "Bloqueio sistêmico no TMS;",
+                  "Análise, pelo gerente responsável, das particularidades das áreas de risco, com definição de alternativas eficazes para redução das faltas."]),
+                (8, "Auditoria obrigatória", "f",
+                 "<b>Objetivo:</b> reforçar o controle nas rotas críticas e em casos de recorrência de faltas.", None,
+                 ["Conferência obrigatória nas rotas críticas ou com histórico de reincidência;",
+                  "“Choque de realidade” junto aos agregados, reforçando a responsabilidade sobre as cargas;",
+                  "Formalizar que eventuais faltas estarão sujeitas a desconto ao responsável."]),
+                (9, "Caixas com abas descoladas", "df",
+                 "<b>Objetivo:</b> garantir que nenhuma caixa violada ou com indícios de irregularidade siga para entrega.", None,
+                 ["Encaminhar caixas suspeitas (principalmente de perfumaria) para validação do cliente quanto à liberação para entrega;",
+                  "<b>Coleta no CD:</b> barrar imediatamente caixas com abas descoladas;",
+                  "<b>Na filial:</b> proibida qualquer colagem de caixas, evitando oportunidades de fraude."]),
+            ]
+
+            _css = """<style>
+            .pa-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.10);border-left:4px solid #2DC5B4;border-radius:10px;padding:14px 18px;margin-bottom:14px;}
+            .pa-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+            .pa-num{min-width:30px;height:30px;border-radius:8px;background:#2DC5B4;color:#0B2E3A;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:16px;}
+            .pa-title{font-size:16px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:.5px;margin:0;}
+            .pa-tag{font-size:11px;font-weight:700;padding:2px 11px;border-radius:20px;text-transform:uppercase;}
+            .pa-card p{color:rgba(255,255,255,.85);font-size:13.5px;margin:8px 0 0;line-height:1.45;}
+            .pa-meta{color:rgba(255,255,255,.6)!important;font-size:12.5px;}
+            .pa-card ul{margin:6px 0 0 4px;padding-left:18px;color:rgba(255,255,255,.85);font-size:13px;line-height:1.45;}
+            .pa-card li{margin-top:3px;}
+            </style>"""
+
+            _html = [_css]
+            for num, title, tag, desc, meta, acoes in _frentes:
+                rotulo, bg, cor = _TAGS[tag]
+                bloco = f'<div class="pa-card"><div class="pa-h"><div class="pa-num">{num}</div>'
+                bloco += f'<span class="pa-title">{title}</span>'
+                bloco += f'<span class="pa-tag" style="background:{bg};color:{cor};">{rotulo}</span></div>'
+                bloco += f'<p>{desc}</p>'
+                if acoes:
+                    bloco += '<ul>' + ''.join(f'<li>{a}</li>' for a in acoes) + '</ul>'
+                if meta:
+                    bloco += f'<p class="pa-meta"><b style="color:rgba(255,255,255,.85);">Por que reduz danos e faltas:</b> {meta}</p>'
+                bloco += '</div>'
+                _html.append(bloco)
+            st.markdown(''.join(_html), unsafe_allow_html=True)
+
+            st.markdown("### 🗓️ Cronograma do Roteirizador — principal ação em curso")
+            _crono = pd.DataFrame({
+                "Filial": ["Taboão da Serra","São José dos Campos","São Mateus","Duque de Caxias","Barra Mansa",
+                           "Praia Grande","Carapicuíba","Campo Grande","Bauru","São Gonçalo","Guarulhos",
+                           "Ribeirão Preto","São Bernardo","Araçatuba","São Pedro da Aldeia","Osasco"],
+                "Avanço": ["100%","100%","100%","100%","100%","70%","60%","50%","40%","35%","30%","25%","20%","15%","10%","5%"],
+                "Previsão": ["Realizado","Realizado","Realizado","Realizado","Realizado","Jun/26","Jun/26","Jun/26",
+                             "Jul/26","Jul/26","Jul/26","Jul/26","Ago/26","Ago/26","Ago/26","Ago/26"],
+            })
+            st.dataframe(_crono, use_container_width=True, hide_index=True)
+            st.caption("5 filiais já operam 100% com o Roteirizador. Conclusão do roll-out nacional prevista para Ago/2026.")
+
             st.write("---")
-            resumo_10 = ["Gestao Operacional e Qualidade", "- Foco: 5 Filiais mais ofensoras", "- Data Referencia: 25/03/2026"]
-            pdf_aba10 = gerar_pdf_dinamico("Plano de Acao Logistico", resumo_10, None)
+            resumo_10 = ["Plano de Acao - Danos e Faltas | Cliente Natura", "- Padrao para todas as filiais", "- 9 frentes de atuacao"]
+            pdf_aba10 = gerar_pdf_dinamico("Plano de Acao - Danos e Faltas", resumo_10, None)
             st.download_button("📄 Baixar Relatório: Plano (PDF)", data=pdf_aba10, file_name="Plano_Acao.pdf", mime="application/pdf", key="pdf_aba10")
 
         elif menu_selecionado == "Tendências":
