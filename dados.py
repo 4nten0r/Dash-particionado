@@ -23,7 +23,7 @@ def load_data():
         df_danos.columns = [str(c).replace('\ufeff', '').replace('ï»¿', '').strip().lower() for c in df_danos.columns]
 
         if not df_danos.empty:
-            df_danos["Data_Filtro"] = pd.to_datetime(df_danos.iloc[:, 0], errors='coerce')
+            df_danos["Data_Filtro"] = pd.to_datetime(df_danos.iloc[:, 0], dayfirst=True, format='mixed', errors='coerce')
             df_danos['Periodo'] = df_danos["Data_Filtro"].dt.month.map(mapa_meses_num).fillna('Não Identificado')
         else:
             df_danos["Data_Filtro"] = pd.NaT
@@ -51,7 +51,7 @@ def load_data():
         df_faltas.columns = [str(c).replace('\ufeff', '').replace('ï»¿', '').strip().lower() for c in df_faltas.columns]
 
         if not df_faltas.empty:
-            df_faltas["Data_Filtro"] = pd.to_datetime(df_faltas.iloc[:, 0], errors='coerce')
+            df_faltas["Data_Filtro"] = pd.to_datetime(df_faltas.iloc[:, 0], dayfirst=True, format='mixed', errors='coerce')
             df_faltas['Periodo'] = df_faltas["Data_Filtro"].dt.month.map(mapa_meses_num).fillna('Não Identificado')
         else:
             df_faltas["Data_Filtro"] = pd.NaT
