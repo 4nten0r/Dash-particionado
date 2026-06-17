@@ -69,13 +69,42 @@ def gerar_pdf_dinamico(titulo, linhas_resumo, df_tabela=None):
             
     return bytes(pdf.output())
 
-# Função de Cache movida para o nível global (soluciona o erro de indentação)
 @st.cache_data(ttl=600)
 def carregar_excel_nuvem_turbinado(url, aba):
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     response = requests.get(url, headers=headers, allow_redirects=True)
     response.raise_for_status() 
     return pd.read_excel(BytesIO(response.content), sheet_name=aba, engine='openpyxl')
+
+# --- NOVAS FUNÇÕES: MOTOR DE CRUZAMENTO DE TREINAMENTOS ---
+def processar_base_treinos(uploaded_file):
+    if uploaded_file.name.endswith('.csv'):
+        return pd.read_csv(uploaded_file)
+    else:
+        return pd.read_excel(uploaded_file)
+
+def cruzar_bases(df_danos, df_faltas, df_treinos):
+    if not df_danos.empty: df_danos['Motorista'] = df_danos['Motorista'].astype(str).str.upper().str.strip()
+    if not df_faltas.empty: df_faltas['Motorista'] = df_faltas['Motorista'].astype(str).str.upper().str.strip()
+    if not df_treinos.empty and 'nome' in df_treinos.columns:
+        df_treinos['nome'] = df_treinos['nome'].astype(str).str.upper().str.strip()
+
+    resumo_danos = df_danos.groupby('Motorista').size().reset_index(name='Qtd_Danos') if not df_danos.empty else pd.DataFrame(columns=['Motorista', 'Qtd_Danos'])
+    resumo_faltas = df_faltas.groupby('Motorista').size().reset_index(name='Qtd_Faltas') if not df_faltas.empty else pd.DataFrame(columns=['Motorista', 'Qtd_Faltas'])
+    resumo_treinos = df_treinos.groupby('nome').size().reset_index(name='Qtd_Treinamentos') if not df_treinos.empty else pd.DataFrame(columns=['nome', 'Qtd_Treinamentos'])
+
+    df_hub = pd.merge(resumo_treinos, resumo_danos, left_on='nome', right_on='Motorista', how='outer')
+    df_hub['nome'] = df_hub['nome'].fillna(df_hub['Motorista']) 
+    if 'Motorista' in df_hub.columns: df_hub.drop(columns=['Motorista'], inplace=True)
+    
+    df_hub = pd.merge(df_hub, resumo_faltas, left_on='nome', right_on='Motorista', how='outer')
+    df_hub['nome'] = df_hub['nome'].fillna(df_hub['Motorista'])
+    if 'Motorista' in df_hub.columns: df_hub.drop(columns=['Motorista'], inplace=True)
+
+    df_hub['Qtd_Danos'] = df_hub['Qtd_Danos'].fillna(0).astype(int)
+    df_hub['Qtd_Faltas'] = df_hub['Qtd_Faltas'].fillna(0).astype(int)
+    df_hub['Qtd_Treinamentos'] = df_hub['Qtd_Treinamentos'].fillna(0).astype(int)
+    return df_hub
 
 # ==========================================
 # INÍCIO DO APLICATIVO
@@ -99,6 +128,11 @@ try:
     # 2. FILTROS: Aplicação
     df_uni, df_danos, df_faltas = aplicar_filtros_barra_lateral(df_uni_base, df_danos_base, df_faltas_base)
 
+    # NOVO: UPLOAD DE TREINAMENTOS NA BARRA LATERAL
+    st.sidebar.markdown("---")
+    st.sidebar.header("📚 Dados de Capacitação")
+    arquivo_treinamentos = st.sidebar.file_uploader("Anexe a Base de Treinamentos", type=["csv", "xlsx"])
+
     # 3. INTERFACE GRÁFICA
     col_titulo, col_logo = st.columns([4, 1])
 
@@ -106,7 +140,7 @@ try:
         st.markdown("""
         <h1 style='margin-bottom:0;'>🚀 Painel Integrado de Logística</h1>
         <p style='margin-top:0; font-size:18px; color:gray;'>
-        Visão consolidada cruzando dados de <b>Danos</b>, <b>Faltas (NC)</b> e <b>Auditoria Logística</b>.
+        Visão consolidada cruzando dados de <b>Danos</b>, <b>Faltas (NC)</b>, <b>Auditoria Logística</b> e <b>Treinamentos</b>.
         </p>
         """, unsafe_allow_html=True)
 
@@ -117,9 +151,12 @@ try:
             pass
 
     st.divider()
-    aba1, aba2, aba3, aba4, aba5, aba6, aba7, aba8, aba9, aba10, aba11 = st.tabs([
+    
+    # ADICIONANDO AS DUAS NOVAS ABAS AO SEU LAYOUT ORIGINAL
+    aba1, aba2, aba3, aba4, aba5, aba6, aba7, aba8, aba9, aba10, aba11, aba12, aba13 = st.tabs([
         "🌐 Visão Geral", "📦 Só Danos", "📉 Só Faltas", "🎯 Curva ABC",
-        "🔄 Recor. Motorista", "🔄 Recor. Cliente", "🛣️ Rotas/Mapa", "📝 Tratativas", "🚨 Fraudes", "📋 Plano de Ação", "📈 Tendências"
+        "🔄 Recor. Motorista", "🔄 Recor. Cliente", "🛣️ Rotas/Mapa", "📝 Tratativas", "🚨 Fraudes", "📋 Plano de Ação", "📈 Tendências",
+        "📚 Treinamentos", "🔍 Raio-X Motorista"
     ])
 
     with aba1:
@@ -493,7 +530,6 @@ try:
                         
                         fig_evol = px.line(df_evol_grp, x='Periodo', y='Quantidade', color='Cidade', markers=True)
                         
-                        # --- LINHA CORRIGIDA AQUI (y=-0.2 no lugar de ybottom=-0.2) ---
                         fig_evol.update_layout(legend=dict(orientation="h", y=-0.2, yanchor="top", xanchor="center", x=0.5))
                         
                         st.plotly_chart(fig_evol, use_container_width=True)
@@ -519,6 +555,7 @@ try:
             
         else:
             st.error("Aviso: A coluna de rotas não foi encontrada na base de dados principal.")
+    
     with aba8:
         st.subheader("📝 Controle de Tratativas")
         link_consolidado = "https://diaslog-my.sharepoint.com/:x:/g/personal/icaro_nascimento_mmdeliverytransportes_com_br/IQAj93IdOFz8R7FzGtY6CH7rAfzodfY-wPpnPjciYx6gHis?download=1"
@@ -648,6 +685,65 @@ try:
             st.warning(f"Não há dados disponíveis para a seleção: {tipo_base}")
         
         st.divider()
+
+    # --- ABA 12: DASHBOARD TREINAMENTOS ---
+    with aba12:
+        st.subheader("📚 Dashboard de Capacitação")
+        if arquivo_treinamentos is None:
+            st.info("👈 Por favor, anexe a base de Treinamentos (CSV/Excel) na barra lateral para visualizar os indicadores de formação.")
+        else:
+            df_treinos = processar_base_treinos(arquivo_treinamentos)
+            if 'treinamento' in df_treinos.columns and 'filial' in df_treinos.columns:
+                col_t1, col_t2 = st.columns(2)
+                with col_t1:
+                    cobertura = df_treinos.groupby('filial')['nome'].nunique().reset_index(name='Motoristas_Treinados')
+                    fig_bar = px.bar(cobertura, x='filial', y='Motoristas_Treinados', color='Motoristas_Treinados', color_continuous_scale="Viridis", title="Cobertura por Filial")
+                    st.plotly_chart(fig_bar, use_container_width=True)
+                with col_t2:
+                    heat = pd.pivot_table(df_treinos, index="filial", columns="treinamento", values="nome", aggfunc="count", fill_value=0)
+                    fig_heat = px.imshow(heat, text_auto=True, color_continuous_scale="Viridis", title="Mapa de Calor: Tema x Filial", aspect="auto")
+                    st.plotly_chart(fig_heat, use_container_width=True)
+            else:
+                st.warning("⚠️ O arquivo de treinamentos anexado não possui as colunas 'treinamento' e/ou 'filial'.")
+
+    # --- ABA 13: CRUZAMENTO (RAIO-X MOTORISTA) ---
+    with aba13:
+        st.subheader("🔍 Raio-X do Motorista: Ocorrências vs Treinamentos")
+        if arquivo_treinamentos is None:
+            st.info("👈 Anexe a base de Treinamentos na barra lateral para habilitar o cruzamento automático de dados de faltas, danos e treinamentos.")
+        else:
+            df_treinos = processar_base_treinos(arquivo_treinamentos)
+            df_hub = cruzar_bases(df_danos, df_faltas, df_treinos)
+            
+            lista_motoristas = sorted(df_hub['nome'].unique())
+            mot_selecionado = st.selectbox("Busque ou Selecione um Motorista para o Raio-X:", lista_motoristas, key="busca_mot_hub")
+            
+            if mot_selecionado:
+                dados_mot = df_hub[df_hub['nome'] == mot_selecionado].iloc[0]
+                
+                c1, c2, c3 = st.columns(3)
+                c1.metric("📚 Treinamentos Realizados", dados_mot['Qtd_Treinamentos'])
+                c2.metric("⚠️ Ocorrências de Faltas", dados_mot['Qtd_Faltas'])
+                c3.metric("📦 Ocorrências de Danos", dados_mot['Qtd_Danos'])
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                if dados_mot['Qtd_Danos'] > 0 and dados_mot['Qtd_Treinamentos'] == 0:
+                    st.error("🚨 ALERTA DE RISCO: Este motorista gerou danos/faltas no período e nunca passou por capacitação no sistema.")
+                elif dados_mot['Qtd_Treinamentos'] > 0 and (dados_mot['Qtd_Danos'] + dados_mot['Qtd_Faltas']) == 0:
+                    st.success("⭐ EXCELENTE: Motorista plenamente capacitado e com ocorrências zeradas.")
+                else:
+                    st.info("ℹ️ Perfil dentro dos limites aceitáveis. Acompanhamento normal.")
+
+            st.write("---")
+            st.markdown("#### 🏆 Visão Consolidada dos Motoristas Críticos")
+            top_criticos = df_hub.sort_values(by=['Qtd_Danos', 'Qtd_Faltas'], ascending=False).head(15)
+            df_melted = pd.melt(top_criticos, id_vars=['nome'], value_vars=['Qtd_Danos', 'Qtd_Faltas', 'Qtd_Treinamentos'], var_name='Indicador', value_name='Quantidade')
+            df_melted['Indicador'] = df_melted['Indicador'].replace({'Qtd_Danos': 'Danos', 'Qtd_Faltas': 'Faltas', 'Qtd_Treinamentos': 'Treinos'})
+            
+            fig_comp = px.bar(df_melted, x='nome', y='Quantidade', color='Indicador', barmode='group', 
+                              color_discrete_map={'Danos': '#d62728', 'Faltas': '#ff7f0e', 'Treinos': '#2ca02c'},
+                              title="Comparativo: Top 15 Motoristas com mais Ocorrências vs. Capacitações Realizadas")
+            st.plotly_chart(fig_comp, use_container_width=True)
 
 except Exception as e:
     st.error(f"Erro no processamento: {e}")
