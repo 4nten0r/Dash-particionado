@@ -19,10 +19,34 @@ from graficos import (plot_top_motoristas, plot_comparativo_filial, plot_pizza_t
 st.set_page_config(page_title="Painel Integrado: Danos & Faltas", layout="wide", page_icon="🚀")
 st.markdown("""
 <style>
-    [data-testid="stMetricValue"] { font-size: 2.2rem; color: #2e4053; font-weight: bold; }
-    [data-testid="stMetricLabel"] { font-size: 1.1rem; color: #555555; }
-    div[data-testid="stBlock"] { padding-top: 1rem; padding-bottom: 1rem; }
-    div.stButton > button:first-child { border-radius: 6px; border: 1px solid #4a90e2; transition: all 0.3s; }
+    /* Fundo Global */
+    .stApp { background-color: #0d1b22; color: #e0e0e0; }
+    
+    /* Cabeçalho e Títulos */
+    h1 { color: #5bc0be !important; }
+    
+    /* Ajuste das Métricas (Cards escuros com letras claras) */
+    [data-testid="stMetricValue"] { color: #5bc0be !important; font-size: 2.5rem; }
+    [data-testid="stMetricLabel"] { color: #a0a0a0 !important; }
+    div[data-testid="stMetric"] { 
+        background-color: #162933; 
+        padding: 20px; 
+        border-radius: 10px; 
+        border: 1px solid #234354;
+    }
+
+    /* Estilização das Abas (Tentando replicar o look na imagem) */
+    button[data-baseweb="tab"] {
+        background-color: #162933 !important;
+        color: #8899a6 !important;
+        border-radius: 5px 5px 0 0 !important;
+        margin-right: 5px !important;
+    }
+    button[data-baseweb="tab"][aria-selected="true"] {
+        background-color: #5bc0be !important;
+        color: #0d1b22 !important;
+        font-weight: bold;
+    }
 </style>
 """, unsafe_allow_html=True)
 
