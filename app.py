@@ -649,4 +649,102 @@ try:
                 alertas = alertas.loc[:, ~alertas.columns.duplicated()] 
                 st.error(f"⚠️ {len(alertas)} Indícios Detectados")
                 
-                colunas_exibicao = ['Motivo', 'Cliente', 'Pedido', 'Quantidade', 'Tipo_Ocorrencia
+                colunas_exibicao = ['Motivo', 'Cliente', 'Pedido', 'Quantidade', 'Tipo_Ocorrencia', 'Motorista', 'Filial', 'Canal', 'description']
+                colunas_existentes = [col for col in colunas_exibicao if col in alertas.columns]
+                df_exibicao = alertas[colunas_existentes].copy()
+                
+                st.dataframe(df_exibicao, use_container_width=True)
+            else: 
+                st.success("✅ Tudo limpo no filtro atual.")
+
+    with aba10:
+        st.subheader("📋 Plano de Ação e Diretrizes")
+        st.markdown("Siga rigorosamente as ações abaixo para mitigação de desvios e auditoria obrigatória.")
+        try: st.image("plano.jpg", use_container_width=True)
+        except Exception: st.error("⚠️ Arquivo 'plano.jpg' não encontrado.")
+            
+        st.write("---")
+        resumo_10 = ["Gestao Operacional e Qualidade", "- Foco: 5 Filiais mais ofensoras", "- Data Referencia: 25/03/2026"]
+        pdf_aba10 = gerar_pdf_dinamico("Plano de Acao Logistico", resumo_10, None)
+        st.download_button("📄 Baixar Relatório: Plano (PDF)", data=pdf_aba10, file_name="Plano_Acao.pdf", mime="application/pdf", key="pdf_aba10")
+
+    with aba11:
+        st.subheader("📈 Análise de Tendências Temporais")
+        
+        tipo_base = st.radio("Qual base de dados você quer analisar na linha do tempo?", ["Ambas (Geral)", "Somente Danos", "Somente Faltas"], horizontal=True)
+        tipo_visao = st.radio("Selecione a periodicidade:", ["Mensal", "Semanal"], horizontal=True)
+        param_tempo = 'M' if tipo_visao == "Mensal" else 'W'
+        
+        if tipo_base == "Somente Danos": df_plot = df_danos  
+        elif tipo_base == "Somente Faltas": df_plot = df_faltas 
+        else: df_plot = df_uni    
+            
+        if not df_plot.empty:
+            fig_tempo = plot_evolucao_temporal(df_plot, periodicidade=param_tempo)
+            if fig_tempo: st.plotly_chart(fig_tempo, use_container_width=True)
+            else: st.warning("Não foi possível gerar o gráfico de linha do tempo com as datas atuais.")
+        else:
+            st.warning(f"Não há dados disponíveis para a seleção: {tipo_base}")
+        
+        st.divider()
+
+    with aba12:
+        st.subheader("📚 Dashboard de Capacitação")
+        if arquivo_treinamentos is None:
+            st.info("👈 Por favor, anexe a base de Treinamentos (CSV/Excel) na barra lateral para visualizar os indicadores de formação.")
+        else:
+            df_treinos = processar_base_treinos(arquivo_treinamentos)
+            if 'treinamento' in df_treinos.columns and 'filial' in df_treinos.columns:
+                col_t1, col_t2 = st.columns(2)
+                with col_t1:
+                    cobertura = df_treinos.groupby('filial')['nome'].nunique().reset_index(name='Motoristas_Treinados')
+                    fig_bar = px.bar(cobertura, x='filial', y='Motoristas_Treinados', color='Motoristas_Treinados', color_continuous_scale="Viridis", title="Cobertura por Filial")
+                    st.plotly_chart(fig_bar, use_container_width=True)
+                with col_t2:
+                    heat = pd.pivot_table(df_treinos, index="filial", columns="treinamento", values="nome", aggfunc="count", fill_value=0)
+                    fig_heat = px.imshow(heat, text_auto=True, color_continuous_scale="Viridis", title="Mapa de Calor: Tema x Filial", aspect="auto")
+                    st.plotly_chart(fig_heat, use_container_width=True)
+            else:
+                st.warning("⚠️ O arquivo de treinamentos anexado não possui as colunas 'treinamento' e/ou 'filial'.")
+
+    with aba13:
+        st.subheader("🔍 Raio-X do Motorista: Ocorrências vs Treinamentos")
+        if arquivo_treinamentos is None:
+            st.info("👈 Anexe a base de Treinamentos na barra lateral para habilitar o cruzamento automático de dados de faltas, danos e treinamentos.")
+        else:
+            df_treinos = processar_base_treinos(arquivo_treinamentos)
+            df_hub = cruzar_bases(df_danos, df_faltas, df_treinos)
+            
+            lista_motoristas = sorted(df_hub['nome'].unique())
+            mot_selecionado = st.selectbox("Busque ou Selecione um Motorista para o Raio-X:", lista_motoristas, key="busca_mot_hub")
+            
+            if mot_selecionado:
+                dados_mot = df_hub[df_hub['nome'] == mot_selecionado].iloc[0]
+                
+                c1, c2, c3 = st.columns(3)
+                c1.metric("📚 Treinamentos Realizados", dados_mot['Qtd_Treinamentos'])
+                c2.metric("⚠️ Ocorrências de Faltas", dados_mot['Qtd_Faltas'])
+                c3.metric("📦 Ocorrências de Danos", dados_mot['Qtd_Danos'])
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                if dados_mot['Qtd_Danos'] > 0 and dados_mot['Qtd_Treinamentos'] == 0:
+                    st.error("🚨 ALERTA DE RISCO: Este motorista gerou danos/faltas no período e nunca passou por capacitação no sistema.")
+                elif dados_mot['Qtd_Treinamentos'] > 0 and (dados_mot['Qtd_Danos'] + dados_mot['Qtd_Faltas']) == 0:
+                    st.success("⭐ EXCELENTE: Motorista plenamente capacitado e com ocorrências zeradas.")
+                else:
+                    st.info("ℹ️ Perfil dentro dos limites aceitáveis. Acompanhamento normal.")
+
+            st.write("---")
+            st.markdown("#### 🏆 Visão Consolidada dos Motoristas Críticos")
+            top_criticos = df_hub.sort_values(by=['Qtd_Danos', 'Qtd_Faltas'], ascending=False).head(15)
+            df_melted = pd.melt(top_criticos, id_vars=['nome'], value_vars=['Qtd_Danos', 'Qtd_Faltas', 'Qtd_Treinamentos'], var_name='Indicador', value_name='Quantidade')
+            df_melted['Indicador'] = df_melted['Indicador'].replace({'Qtd_Danos': 'Danos', 'Qtd_Faltas': 'Faltas', 'Qtd_Treinamentos': 'Treinos'})
+            
+            fig_comp = px.bar(df_melted, x='nome', y='Quantidade', color='Indicador', barmode='group', 
+                              color_discrete_map={'Danos': '#d62728', 'Faltas': '#ff7f0e', 'Treinos': '#2ca02c'},
+                              title="Comparativo: Top 15 Motoristas com mais Ocorrências vs. Capacitações Realizadas")
+            st.plotly_chart(fig_comp, use_container_width=True)
+
+except Exception as e:
+    st.error(f"Erro no processamento: {e}")
+    st.code(traceback.format_exc())
