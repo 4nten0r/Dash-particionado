@@ -21,6 +21,8 @@ st.markdown("""
 <style>
     [data-testid="stMetricValue"] { font-size: 2.2rem; color: #2e4053; font-weight: bold; }
     [data-testid="stMetricLabel"] { font-size: 1.1rem; color: #555555; }
+    div[data-testid="stBlock"] { padding-top: 1rem; padding-bottom: 1rem; }
+    div.stButton > button:first-child { border-radius: 6px; border: 1px solid #4a90e2; transition: all 0.3s; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -128,12 +130,19 @@ try:
     # 2. FILTROS: Aplicação
     df_uni, df_danos, df_faltas = aplicar_filtros_barra_lateral(df_uni_base, df_danos_base, df_faltas_base)
 
-    # NOVO: UPLOAD DE TREINAMENTOS NA BARRA LATERAL
+    # --- NAVEGAÇÃO LATERAL (REDESIGN UX) ---
     st.sidebar.markdown("---")
-    st.sidebar.header("📚 Dados de Capacitação")
-    arquivo_treinamentos = st.sidebar.file_uploader("Anexe a Base de Treinamentos", type=["csv", "xlsx"])
+    st.sidebar.header("🧭 Menu Principal")
+    
+    opcoes_menu = [
+        "🌐 Visão Geral", "📦 Só Danos", "📉 Só Faltas", "🎯 Curva ABC",
+        "🔄 Recor. Motorista", "🔄 Recor. Cliente", "🛣️ Rotas/Mapa", "📝 Tratativas", 
+        "🚨 Fraudes", "📋 Plano de Ação", "📈 Tendências", "📚 Treinamentos", "🔍 Raio-X Motorista"
+    ]
+    
+    menu_selecionado = st.sidebar.radio("Selecione a visualização:", opcoes_menu)
 
-    # 3. INTERFACE GRÁFICA
+    # 3. INTERFACE GRÁFICA GERAL
     col_titulo, col_logo = st.columns([4, 1])
 
     with col_titulo:
@@ -152,14 +161,11 @@ try:
 
     st.divider()
     
-    # ADICIONANDO AS DUAS NOVAS ABAS AO SEU LAYOUT ORIGINAL
-    aba1, aba2, aba3, aba4, aba5, aba6, aba7, aba8, aba9, aba10, aba11, aba12, aba13 = st.tabs([
-        "🌐 Visão Geral", "📦 Só Danos", "📉 Só Faltas", "🎯 Curva ABC",
-        "🔄 Recor. Motorista", "🔄 Recor. Cliente", "🛣️ Rotas/Mapa", "📝 Tratativas", "🚨 Fraudes", "📋 Plano de Ação", "📈 Tendências",
-        "📚 Treinamentos", "🔍 Raio-X Motorista"
-    ])
-
-    with aba1:
+    # ==========================================
+    # RENDERIZAÇÃO CONDICIONAL DAS PÁGINAS
+    # ==========================================
+    
+    if menu_selecionado == "🌐 Visão Geral":
         total_ocorrencias = len(df_uni)
         if total_ocorrencias > 0:
             taxa_dano = len(df_danos) / total_ocorrencias
@@ -219,7 +225,7 @@ try:
         pdf_aba1 = gerar_pdf_dinamico("Relatorio - Visao Geral", resumo_1, top_geral)
         st.download_button("📄 Baixar Relatório: Visão Geral (PDF)", data=pdf_aba1, file_name="Visao_Geral.pdf", mime="application/pdf", key="pdf_aba1")
 
-    with aba2:
+    elif menu_selecionado == "📦 Só Danos":
         if not df_danos.empty:
             total_itens_dano = df_danos['Quantidade'].sum()
             total_ocorrencias_dano = len(df_danos)
@@ -265,7 +271,7 @@ try:
         pdf_aba2 = gerar_pdf_dinamico("Relatorio - Somente Danos", resumo_2, top_danos)
         st.download_button("📄 Baixar Relatório: Danos (PDF)", data=pdf_aba2, file_name="Relatorio_Danos.pdf", mime="application/pdf", key="pdf_aba2")
 
-    with aba3:
+    elif menu_selecionado == "📉 Só Faltas":
         if not df_faltas.empty:
             total_itens_falta = df_faltas['Quantidade'].sum()
             total_ocorrencias_falta = len(df_faltas)
@@ -312,7 +318,7 @@ try:
         else:
             st.info("Nenhum dado de falta encontrado.")
 
-    with aba4:
+    elif menu_selecionado == "🎯 Curva ABC":
         st.subheader("🎯 Classificação ABC por Motorista (Reativa)")
         fig_abc, df_abc = plot_curva_abc(df_uni)
         if fig_abc:
@@ -325,7 +331,7 @@ try:
         pdf_aba4 = gerar_pdf_dinamico("Relatorio - Curva ABC", resumo_4, df_abc)
         st.download_button("📄 Baixar Relatório: Curva ABC (PDF)", data=pdf_aba4, file_name="Curva_ABC.pdf", mime="application/pdf", key="pdf_aba4")
 
-    with aba5:
+    elif menu_selecionado == "🔄 Recor. Motorista":
         st.subheader("🔄 Histórico Mensal de Ofensores (Motoristas)")
         fig_heat_m, df_recor_m = plot_heatmap_recorrencia(df_uni, 'Motorista')
         if fig_heat_m:
@@ -339,7 +345,7 @@ try:
         pdf_aba5 = gerar_pdf_dinamico("Recorrencia - Motoristas", resumo_5, df_recor_m)
         st.download_button("📄 Baixar Relatório: Recor. Motorista (PDF)", data=pdf_aba5, file_name="Recorrencia_Motoristas.pdf", mime="application/pdf", key="pdf_aba5")
 
-    with aba6:
+    elif menu_selecionado == "🔄 Recor. Cliente":
         st.subheader("🔄 Histórico Mensal de Clientes Reincidentes")
         fig_heat_c, df_recor_c = plot_heatmap_recorrencia(df_uni, 'Cliente')
         if fig_heat_c: st.plotly_chart(fig_heat_c, use_container_width=True)
@@ -350,7 +356,7 @@ try:
         pdf_aba6 = gerar_pdf_dinamico("Recorrencia - Clientes", resumo_6, df_recor_c if fig_heat_c else None)
         st.download_button("📄 Baixar Relatório: Recor. Cliente (PDF)", data=pdf_aba6, file_name="Recorrencia_Clientes.pdf", mime="application/pdf", key="pdf_aba6")
 
-    with aba7:
+    elif menu_selecionado == "🛣️ Rotas/Mapa":
         st.subheader("📍 Detalhamento e Inteligência por Rota")
         
         coluna_rota_real = None
@@ -556,7 +562,7 @@ try:
         else:
             st.error("Aviso: A coluna de rotas não foi encontrada na base de dados principal.")
     
-    with aba8:
+    elif menu_selecionado == "📝 Tratativas":
         st.subheader("📝 Controle de Tratativas")
         link_consolidado = "https://diaslog-my.sharepoint.com/:x:/g/personal/icaro_nascimento_mmdeliverytransportes_com_br/IQAj93IdOFz8R7FzGtY6CH7rAfzodfY-wPpnPjciYx6gHis?download=1"
 
@@ -606,7 +612,7 @@ try:
         pdf_aba8 = gerar_pdf_dinamico("Controle de Tratativas (Nuvem)", resumo_8, df_pdf_8)
         st.download_button(label="📄 Baixar Relatório: Tratativas (PDF)", data=pdf_aba8, file_name="Controle_Tratativas.pdf", mime="application/pdf", key="pdf_aba8")
 
-    with aba9:
+    elif menu_selecionado == "🚨 Fraudes":
         st.subheader("🚨 Dossiê de Fraudes")
         alertas = pd.DataFrame()
         
@@ -655,7 +661,7 @@ try:
             else: 
                 st.success("✅ Tudo limpo no filtro atual.")
 
-    with aba10:
+    elif menu_selecionado == "📋 Plano de Ação":
         st.subheader("📋 Plano de Ação e Diretrizes")
         st.markdown("Siga rigorosamente as ações abaixo para mitigação de desvios e auditoria obrigatória.")
         try: st.image("plano.jpg", use_container_width=True)
@@ -666,7 +672,7 @@ try:
         pdf_aba10 = gerar_pdf_dinamico("Plano de Acao Logistico", resumo_10, None)
         st.download_button("📄 Baixar Relatório: Plano (PDF)", data=pdf_aba10, file_name="Plano_Acao.pdf", mime="application/pdf", key="pdf_aba10")
 
-    with aba11:
+    elif menu_selecionado == "📈 Tendências":
         st.subheader("📈 Análise de Tendências Temporais")
         
         tipo_base = st.radio("Qual base de dados você quer analisar na linha do tempo?", ["Ambas (Geral)", "Somente Danos", "Somente Faltas"], horizontal=True)
@@ -686,12 +692,12 @@ try:
         
         st.divider()
 
-    # --- ABA 12: DASHBOARD TREINAMENTOS ---
-    with aba12:
+    elif menu_selecionado == "📚 Treinamentos":
         st.subheader("📚 Dashboard de Capacitação")
-        if arquivo_treinamentos is None:
-            st.info("👈 Por favor, anexe a base de Treinamentos (CSV/Excel) na barra lateral para visualizar os indicadores de formação.")
-        else:
+        st.info("💡 Para visualizar os indicadores, precisamos da base atualizada de capacitações.")
+        arquivo_treinamentos = st.file_uploader("Anexe a Base de Treinamentos (CSV/Excel)", type=["csv", "xlsx"], key="upload_treino")
+        
+        if arquivo_treinamentos is not None:
             df_treinos = processar_base_treinos(arquivo_treinamentos)
             if 'treinamento' in df_treinos.columns and 'filial' in df_treinos.columns:
                 col_t1, col_t2 = st.columns(2)
@@ -706,12 +712,12 @@ try:
             else:
                 st.warning("⚠️ O arquivo de treinamentos anexado não possui as colunas 'treinamento' e/ou 'filial'.")
 
-    # --- ABA 13: CRUZAMENTO (RAIO-X MOTORISTA) ---
-    with aba13:
+    elif menu_selecionado == "🔍 Raio-X Motorista":
         st.subheader("🔍 Raio-X do Motorista: Ocorrências vs Treinamentos")
-        if arquivo_treinamentos is None:
-            st.info("👈 Anexe a base de Treinamentos na barra lateral para habilitar o cruzamento automático de dados de faltas, danos e treinamentos.")
-        else:
+        st.info("💡 Insira a base de treinamentos para habilitar o cruzamento automático com as faltas e danos.")
+        arquivo_treinamentos = st.file_uploader("Anexe a Base de Treinamentos (CSV/Excel)", type=["csv", "xlsx"], key="upload_raiox")
+        
+        if arquivo_treinamentos is not None:
             df_treinos = processar_base_treinos(arquivo_treinamentos)
             df_hub = cruzar_bases(df_danos, df_faltas, df_treinos)
             
