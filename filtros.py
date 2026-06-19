@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from datetime import date as _date
 
 def aplicar_filtros_barra_lateral(df_uni_base, df_danos_base, df_faltas_base):
     """Cria a barra lateral, captura as escolhas do usuário e filtra os DataFrames."""
@@ -27,19 +28,21 @@ def aplicar_filtros_barra_lateral(df_uni_base, df_danos_base, df_faltas_base):
         st.divider()
 
         # --- 2. CALENDÁRIO ---
+        hoje = _date.today()
         if not df_uni_base.empty and 'Data_Filtro' in df_uni_base.columns and not df_uni_base['Data_Filtro'].dropna().empty:
             min_date = df_uni_base['Data_Filtro'].dropna().min().date()
-            max_date = df_uni_base['Data_Filtro'].dropna().max().date()
+            max_date = min(df_uni_base['Data_Filtro'].dropna().max().date(), hoje)
             if min_date == max_date:
                 min_date = min_date - pd.Timedelta(days=7)
         else:
-            hoje = pd.to_datetime('today').date()
             min_date = hoje - pd.Timedelta(days=30)
             max_date = hoje
 
         datas_selecionadas = st.date_input(
             "📅 Período de Análise:",
             value=(min_date, max_date),
+            min_value=min_date,
+            max_value=hoje,
             format="DD/MM/YYYY",
             help="Selecione primeiro a data de INÍCIO e depois a data de FIM."
         )

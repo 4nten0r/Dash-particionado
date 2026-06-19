@@ -42,42 +42,54 @@ def plot_heatmap_recorrencia(df, coluna_alvo):
         if df_valido.empty:
             return None, pd.DataFrame()
 
+        # Usa Ano-Mês derivado de Data_Filtro para distinguir anos diferentes
+        # (evita que Set/2025 e Set/2026 apareçam na mesma coluna)
+        if 'Data_Filtro' in df_valido.columns:
+            datas = pd.to_datetime(df_valido['Data_Filtro'], errors='coerce')
+            df_valido['_AnoMes'] = datas.dt.to_period('M')
+            col_periodo = '_AnoMes'
+        else:
+            df_valido['_AnoMes'] = df_valido['Periodo']
+            col_periodo = '_AnoMes'
+
         pivot = df_valido.pivot_table(
-            index=coluna_alvo, 
-            columns='Periodo', 
-            values='Quantidade', 
-            aggfunc='sum', 
+            index=coluna_alvo,
+            columns=col_periodo,
+            values='Quantidade',
+            aggfunc='sum',
             fill_value=0
         )
-        
+
         if pivot.empty:
             return None, pd.DataFrame()
-            
-        # --- TRAVA DE ORDEM CRONOLÓGICA DOS MESES ---
-        meses_ref = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
-        colunas_existentes = [m for m in meses_ref if m in pivot.columns]
-        pivot = pivot[colunas_existentes]
-        # --------------------------------------------
 
-        # Ordena o gráfico para os piores ficarem no topo visualmente
-        pivot['Total'] = pivot.sum(axis=1)
-        pivot = pivot.sort_values(by='Total', ascending=True).drop(columns=['Total'])
-        
-        # Gera o mapa de calor
+        # Ordena colunas cronologicamente e formata como "Mmm/AA"
+        pivot = pivot.sort_index(axis=1)
+        meses_pt = {1:'Jan',2:'Fev',3:'Mar',4:'Abr',5:'Mai',6:'Jun',
+                    7:'Jul',8:'Ago',9:'Set',10:'Out',11:'Nov',12:'Dez'}
+        pivot.columns = [
+            f"{meses_pt.get(c.month, c.month)}/{str(c.year)[2:]}"
+            if hasattr(c, 'month') else str(c)
+            for c in pivot.columns
+        ]
+
+        # Ordena motoristas/clientes pelos piores (maior total no topo)
+        pivot['_total'] = pivot.sum(axis=1)
+        pivot = pivot.sort_values(by='_total', ascending=True).drop(columns=['_total'])
+
         fig = px.imshow(
-            pivot, 
-            text_auto='.0f', 
-            aspect="auto", 
+            pivot,
+            text_auto='.0f',
+            aspect="auto",
             color_continuous_scale="Reds",
             labels=dict(x="Período", y=coluna_alvo, color="Volume de Itens")
         )
-        
         fig.update_layout(
-            xaxis_title="", 
+            xaxis_title="",
             yaxis_title="",
             margin=dict(l=0, r=0, t=30, b=0)
         )
-        
+
         return fig, pivot.reset_index()
 
     except Exception as e:
