@@ -89,6 +89,16 @@ def load_data():
                 if col not in ['Data_Filtro', 'Quantidade']:
                     df[col] = df[col].fillna('Não Identificado')
 
+    # Unifica filiais que representam a mesma unidade
+    _FILIAIS_DCX = {
+        'DIAS MD MEGA RIO DE JANEIRO',
+        'DIAS DCX BAIXADA FLUMINENSE',
+        'DIAS DUQUE DE CAXIAS MEGA FILIAL',
+    }
+    for df in [df_danos, df_faltas]:
+        if not df.empty and 'Filial' in df.columns:
+            df['Filial'] = df['Filial'].where(~df['Filial'].isin(_FILIAIS_DCX), 'DIAS DUQUE DE CAXIAS')
+
     df_unificado = pd.concat([df_danos[colunas_comuns], df_faltas[colunas_comuns]], ignore_index=True)
     if not df_unificado.empty and 'Rota' in df_unificado.columns:
         df_unificado['Rota'] = df_unificado['Rota'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
