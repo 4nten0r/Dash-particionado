@@ -138,6 +138,41 @@ def plot_mapa_rotas(df_uni, df_mapa_agg, df_coord_agg):
     
     return fig, tabela_final[['Rota', 'Setor', 'Bairro', 'Total_Geral']].sort_values('Total_Geral', ascending=False)
 
+def plot_mapa_cidades(df):
+    """Mapa de calor agregado por CIDADE (centroide medio), dimensionado por volume de itens.
+    Agrega por cidade para nao expor coordenadas de entrega individuais (LGPD)."""
+    if df.empty or 'Latitude' not in df.columns or 'Cidade' not in df.columns:
+        return None, 0, pd.DataFrame()
+
+    base = df[(df['Quantidade'] > 0) & (~df['Cidade'].isin(['Não Identificada', 'Não Identificado', 'nan', '']))].copy()
+    if base.empty:
+        return None, 0, pd.DataFrame()
+
+    base['Latitude'] = pd.to_numeric(base['Latitude'], errors='coerce')
+    base['Longitude'] = pd.to_numeric(base['Longitude'], errors='coerce')
+    sem_coord = int(base['Latitude'].isna().sum())
+    base = base.dropna(subset=['Latitude', 'Longitude'])
+    if base.empty:
+        return None, sem_coord, pd.DataFrame()
+
+    agg = base.groupby('Cidade').agg(
+        Latitude=('Latitude', 'mean'),
+        Longitude=('Longitude', 'mean'),
+        Volume=('Quantidade', 'sum'),
+        Ocorrencias=('Quantidade', 'size'),
+    ).reset_index().sort_values('Volume', ascending=False)
+
+    fig = px.scatter_mapbox(
+        agg, lat='Latitude', lon='Longitude', size='Volume', color='Volume',
+        color_continuous_scale='Reds', size_max=40, zoom=5,
+        hover_name='Cidade',
+        hover_data={'Volume': True, 'Ocorrencias': True, 'Latitude': False, 'Longitude': False},
+        mapbox_style='carto-positron'
+    )
+    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
+    return fig, sem_coord, agg
+
+
 def plot_evolucao_temporal(df, periodicidade='M'):
     if df.empty:
         return None
@@ -172,25 +207,37 @@ def plot_evolucao_temporal(df, periodicidade='M'):
     return fig
     
 def plot_comparativo_temporal_tipo(df):
-    """Gera um gráfico de barras comparando Danos x Faltas mês a mês."""
-    if df.empty or 'Periodo' not in df.columns:
+    """Gera um gráfico de barras comparando Danos x Faltas por Ano-Mês.
+    Usa Data_Filtro (Ano-Mês) em vez de 'Periodo' (nome do mês sem ano), para não
+    misturar meses de anos diferentes (ex.: Set/2025 + Set/2026 na mesma barra)."""
+    if df.empty or 'Data_Filtro' not in df.columns:
         return None
-        
-    # Soma a quantidade de itens agrupando pelo Mês e pelo Tipo (Dano/Falta)
-    df_grp = df.groupby(['Periodo', 'Tipo_Ocorrencia'])['Quantidade'].sum().reset_index()
-    
-    # Trava para forçar a ordem cronológica correta no eixo X
-    meses_ordem = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
-    df_grp['Periodo'] = pd.Categorical(df_grp['Periodo'], categories=meses_ordem, ordered=True)
+
+    dft = df.copy()
+    dft['Data_Filtro'] = pd.to_datetime(dft['Data_Filtro'], errors='coerce')
+    dft = dft.dropna(subset=['Data_Filtro'])
+    if dft.empty:
+        return None
+
+    dft['_AnoMes'] = dft['Data_Filtro'].dt.to_period('M')
+    df_grp = dft.groupby(['_AnoMes', 'Tipo_Ocorrencia'])['Quantidade'].sum().reset_index()
+    df_grp = df_grp.sort_values('_AnoMes')
+
+    # Rótulo Mmm/AA mantendo a ordem cronológica
+    meses_pt = {1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
+                7: 'Jul', 8: 'Ago', 9: 'Set', 10: 'Out', 11: 'Nov', 12: 'Dez'}
+    df_grp['Periodo'] = df_grp['_AnoMes'].apply(lambda p: f"{meses_pt[p.month]}/{str(p.year)[2:]}")
+    ordem = list(dict.fromkeys(df_grp['Periodo']))
+    df_grp['Periodo'] = pd.Categorical(df_grp['Periodo'], categories=ordem, ordered=True)
     df_grp = df_grp.sort_values('Periodo')
-    
+
     # Monta o gráfico de barras agrupado (barmode='group')
     fig = px.bar(
-        df_grp, 
-        x='Periodo', 
-        y='Quantidade', 
-        color='Tipo_Ocorrencia', 
-        barmode='group', 
+        df_grp,
+        x='Periodo',
+        y='Quantidade',
+        color='Tipo_Ocorrencia',
+        barmode='group',
         text_auto='.0f',
         color_discrete_map={'Dano':'#1f77b4', 'Falta':'#d62728'},
         title="Volume Mensal: Danos x Faltas"

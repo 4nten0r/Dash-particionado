@@ -19,8 +19,8 @@ from yaml.loader import SafeLoader
 # --- IMPORTANDO AS CAMADAS ---
 from dados import load_data
 from filtros import aplicar_filtros_barra_lateral
-from graficos import (plot_top_motoristas, plot_comparativo_filial, plot_pizza_tipo_ocorrencia, 
-                      plot_curva_abc, plot_heatmap_recorrencia, plot_mapa_rotas,
+from graficos import (plot_top_motoristas, plot_comparativo_filial, plot_pizza_tipo_ocorrencia,
+                      plot_curva_abc, plot_heatmap_recorrencia, plot_mapa_rotas, plot_mapa_cidades,
                       plot_evolucao_temporal, plot_comparativo_temporal_tipo)
 
 # Configuração da Página e CSS (DEVE SER O PRIMEIRO COMANDO)
@@ -809,7 +809,25 @@ elif st.session_state.get("authentication_status"):
                         else:
                             st.info("Sem bairros identificados.")
 
-                aba_geral, aba_danos, aba_faltas = st.tabs(["📊 Geral", "📦 Danos", "📉 Faltas"])
+                aba_mapa, aba_geral, aba_danos, aba_faltas = st.tabs(["🗺️ Mapa", "📊 Geral", "📦 Danos", "📉 Faltas"])
+                with aba_mapa:
+                    st.markdown("#### 🗺️ Mapa de Calor por Cidade")
+                    st.caption("Ocorrências agregadas por cidade (centroide). Tamanho/cor = volume de itens.")
+                    base_map = st.radio("Base do mapa:", ["Geral", "Danos", "Faltas"], horizontal=True, key="mapa_base")
+                    dfm = df_uni if base_map == "Geral" else (df_danos if base_map == "Danos" else df_faltas)
+                    fig_mapa, sem_coord, tab_mapa = plot_mapa_cidades(dfm)
+                    if fig_mapa is not None:
+                        st.plotly_chart(fig_mapa, use_container_width=True, key="mapa_cidades")
+                        if sem_coord:
+                            st.caption(f"ℹ️ {sem_coord} ocorrência(s) sem coordenada localizada não entraram no mapa.")
+                        with st.expander("Ver tabela de cidades do mapa"):
+                            st.dataframe(
+                                tab_mapa[['Cidade', 'Volume', 'Ocorrencias']].rename(
+                                    columns={'Volume': 'Itens', 'Ocorrencias': 'Registros'}),
+                                use_container_width=True
+                            )
+                    else:
+                        st.info("Sem coordenadas suficientes para gerar o mapa nesta seleção.")
                 with aba_geral:
                     _render_top_geo(df_uni, dias_teal_scale, dias_red_scale, "geo_geral")
                 with aba_danos:

@@ -115,8 +115,15 @@ def load_data():
         # Mapa Pedido -> Cidade/Bairro (cruzamento confiável: 100% das ocorrencias batem por pedido,
         # ao contrario da Rota, cuja codificacao difere entre Natura e Diaslog)
         if 'Pedido' in df_ref.columns and 'Cidade' in df_ref.columns:
-            df_ped_geo = df_ref[['Pedido', 'Cidade', 'Bairro']].copy()
+            cols_geo = ['Pedido', 'Cidade', 'Bairro']
+            tem_coord = 'LATITUDE' in df_ref.columns and 'LONGITUDE' in df_ref.columns
+            if tem_coord:
+                cols_geo += ['LATITUDE', 'LONGITUDE']
+            df_ped_geo = df_ref[cols_geo].copy()
             df_ped_geo['Pedido'] = _norm_chave(df_ped_geo['Pedido'])
+            if tem_coord:
+                df_ped_geo['LATITUDE'] = pd.to_numeric(df_ped_geo['LATITUDE'].astype(str).str.replace(',', '.'), errors='coerce')
+                df_ped_geo['LONGITUDE'] = pd.to_numeric(df_ped_geo['LONGITUDE'].astype(str).str.replace(',', '.'), errors='coerce')
             df_ped_geo = df_ped_geo[df_ped_geo['Pedido'].ne('') & df_ped_geo['Pedido'].ne('nan')]
             # 1 linha por pedido, priorizando registros com Cidade preenchida
             df_ped_geo = df_ped_geo.sort_values('Cidade', na_position='last').drop_duplicates(subset=['Pedido'], keep='first')
@@ -153,12 +160,23 @@ def load_data():
         if df_ped_geo.empty:
             df['Cidade'] = 'Não Identificada'
             df['Bairro'] = 'Não Identificado'
+            df['Latitude'] = pd.NA
+            df['Longitude'] = pd.NA
             return df
         chave = _norm_chave(df['Pedido'])
         mapa_cid = dict(zip(df_ped_geo['Pedido'], df_ped_geo['Cidade']))
         mapa_bai = dict(zip(df_ped_geo['Pedido'], df_ped_geo['Bairro']))
         df['Cidade'] = chave.map(mapa_cid).fillna('Não Identificada')
         df['Bairro'] = chave.map(mapa_bai).fillna('Não Identificado')
+        # Coordenadas por Pedido (usadas SOMENTE para agregar por Cidade no mapa — nunca por ponto individual, LGPD)
+        if 'LATITUDE' in df_ped_geo.columns and 'LONGITUDE' in df_ped_geo.columns:
+            mapa_lat = dict(zip(df_ped_geo['Pedido'], df_ped_geo['LATITUDE']))
+            mapa_lon = dict(zip(df_ped_geo['Pedido'], df_ped_geo['LONGITUDE']))
+            df['Latitude'] = chave.map(mapa_lat)
+            df['Longitude'] = chave.map(mapa_lon)
+        else:
+            df['Latitude'] = pd.NA
+            df['Longitude'] = pd.NA
         return df
 
     df_danos = _enriquecer_geo(df_danos)
