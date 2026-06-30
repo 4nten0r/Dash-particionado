@@ -344,7 +344,7 @@ elif st.session_state.get("authentication_status"):
     # INÍCIO DO APLICATIVO
     # ==========================================
     try:
-        df_danos_base, df_faltas_base, df_uni_base, df_mapa_agg, df_coord_agg, df_trat1_base, df_trat2_base = load_data()
+        df_danos_base, df_faltas_base, df_uni_base, df_mapa_agg, df_coord_agg, df_trat1_base, df_trat2_base, sla_info = load_data()
 
         colunas_vitais = ['Cliente', 'Motorista', 'Filial', 'Categoria', 'Periodo', 'Tipo_Ocorrencia', 'Pedido', 'Rota', 'Quantidade', 'Empresa', 'Canal']
         for df_limpo in [df_danos_base, df_faltas_base, df_uni_base]:
@@ -378,8 +378,8 @@ elif st.session_state.get("authentication_status"):
 
         menu_selecionado = option_menu(
             menu_title=None,
-            options=["Resumo Executivo", "Visão Geral", "Danos", "Faltas", "Curva ABC", "Motoristas", "Clientes", "Recorrência Cruzada", "Rotas", "Tratativas", "Alertas Operacionais", "Plano de Ação", "Tendências"],
-            icons=["clipboard2-data", "globe", "box-seam", "graph-down-arrow", "bar-chart-steps", "truck", "people-fill", "arrow-left-right", "map", "clipboard2-check", "bell", "kanban", "graph-up-arrow"],
+            options=["Resumo Executivo", "Visão Geral", "Danos", "Faltas", "Curva ABC", "Recorrências", "Rotas", "SLA × Ocorrência", "Tratativas", "Alertas Operacionais", "Plano de Ação", "Tendências"],
+            icons=["clipboard2-data", "globe", "box-seam", "graph-down-arrow", "bar-chart-steps", "arrow-repeat", "map", "clock-history", "clipboard2-check", "bell", "kanban", "graph-up-arrow"],
             default_index=0,
             orientation="horizontal",
             styles={
@@ -589,145 +589,149 @@ elif st.session_state.get("authentication_status"):
             pdf_aba4 = gerar_pdf_dinamico("Relatorio - Curva ABC", resumo_4, df_abc)
             st.download_button("📄 Baixar Relatório: Curva ABC (PDF)", data=pdf_aba4, file_name="Curva_ABC.pdf", mime="application/pdf", key="pdf_aba4")
 
-        elif menu_selecionado == "Motoristas":
-            st.subheader("🔄 Histórico Mensal de Ofensores (Motoristas)")
-            if not df_uni.empty:
-                df_mot_valido = df_uni[~df_uni['Motorista'].str.upper().isin(['NÃO IDENTIFICADO', 'NAN', '', 'N/A'])].copy()
-                resumo_recorrencia_m = df_mot_valido.groupby('Motorista').agg(
-                    Qtd_Periodos=('Periodo', 'nunique'), Total_Itens=('Quantidade', 'sum')
-                ).reset_index().sort_values(by=['Total_Itens', 'Qtd_Periodos'], ascending=[False, False])
-                
-                top_motoristas = resumo_recorrencia_m.head(15)['Motorista'].tolist()
-                df_uni_top_mot = df_mot_valido[df_mot_valido['Motorista'].isin(top_motoristas)]
-                
-                fig_heat_m, df_recor_m = plot_heatmap_recorrencia(df_uni_top_mot, 'Motorista')
-                if fig_heat_m:
-                    fig_heat_m.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
-                    st.plotly_chart(fig_heat_m, use_container_width=True)
-                    
-                    st.markdown("**📋 Motoristas de Atenção — Visão Consolidada:**")
-                    df_resumo_mot = df_uni_top_mot.pivot_table(index='Motorista', columns='Tipo_Ocorrencia', values='Quantidade', aggfunc='sum', fill_value=0).reset_index()
-                    if 'Dano' not in df_resumo_mot.columns: df_resumo_mot['Dano'] = 0
-                    if 'Falta' not in df_resumo_mot.columns: df_resumo_mot['Falta'] = 0
-                    
-                    df_resumo_mot['Total de Itens'] = df_resumo_mot['Dano'] + df_resumo_mot['Falta']
-                    df_resumo_mot = pd.merge(df_resumo_mot, resumo_recorrencia_m[['Motorista', 'Qtd_Periodos']], on='Motorista', how='left')
-                    df_resumo_mot = df_resumo_mot.sort_values(by=['Qtd_Periodos', 'Total de Itens'], ascending=[False, False]).reset_index(drop=True)
-                    df_resumo_mot = df_resumo_mot.rename(columns={'Dano': '📦 Itens Danificados', 'Falta': '📉 Itens Faltantes', 'Qtd_Periodos': '📅 Meses Afetados'})
-                    st.dataframe(df_resumo_mot, use_container_width=True)
-                else: 
-                    st.info("Ajuste os filtros para visualizar a recorrência.")
-                    df_resumo_mot = None
-            else:
-                st.info("Base de dados vazia para os filtros atuais.")
-                df_resumo_mot = None
-                
-            resumo_5 = ["Acompanhamento dos Motoristas mais críticos."]
-            pdf_aba5 = gerar_pdf_dinamico("Dossiê - Motoristas Críticos", resumo_5, df_resumo_mot if df_resumo_mot is not None else None)
-            st.download_button("📄 Baixar Relatório: Recor. Motorista (PDF)", data=pdf_aba5, file_name="Recorrencia_Motoristas.pdf", mime="application/pdf", key="pdf_aba5")
+        elif menu_selecionado == "Recorrências":
+            st.subheader("🔁 Análise de Recorrência")
+            tab_mot, tab_cli, tab_cruz = st.tabs(["🚛 Motoristas", "👥 Clientes", "🔀 Cruzada (Mot × Cli)"])
 
-        elif menu_selecionado == "Clientes":
-            st.subheader("🔄 Histórico Mensal de Clientes Reincidentes")
-            if not df_uni.empty:
-                df_cli_valido = df_uni[~df_uni['Cliente'].str.upper().isin(['NÃO IDENTIFICADO', 'NAN', '', 'N/A'])].copy()
-                resumo_recorrencia = df_cli_valido.groupby('Cliente').agg(
-                    Qtd_Periodos=('Periodo', 'nunique'), Total_Itens=('Quantidade', 'sum')
-                ).reset_index().sort_values(by=['Total_Itens', 'Qtd_Periodos'], ascending=[False, False])
+            with tab_mot:
+                st.subheader("🔄 Histórico Mensal de Ofensores (Motoristas)")
+                if not df_uni.empty:
+                    df_mot_valido = df_uni[~df_uni['Motorista'].str.upper().isin(['NÃO IDENTIFICADO', 'NAN', '', 'N/A'])].copy()
+                    resumo_recorrencia_m = df_mot_valido.groupby('Motorista').agg(
+                        Qtd_Periodos=('Periodo', 'nunique'), Total_Itens=('Quantidade', 'sum')
+                    ).reset_index().sort_values(by=['Total_Itens', 'Qtd_Periodos'], ascending=[False, False])
 
-                top_clientes = resumo_recorrencia.head(15)['Cliente'].tolist()
-                df_uni_top_clientes = df_cli_valido[df_cli_valido['Cliente'].isin(top_clientes)]
-                
-                fig_heat_c, df_recor_c = plot_heatmap_recorrencia(df_uni_top_clientes, 'Cliente')
-                
-                if fig_heat_c: 
-                    fig_heat_c.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
-                    st.plotly_chart(fig_heat_c, use_container_width=True)
-                    
-                    st.markdown("**📋 Clientes Críticos — Visão Consolidada:**")
-                    df_resumo_cli = df_uni_top_clientes.pivot_table(index='Cliente', columns='Tipo_Ocorrencia', values='Quantidade', aggfunc='sum', fill_value=0).reset_index()
-                    if 'Dano' not in df_resumo_cli.columns: df_resumo_cli['Dano'] = 0
-                    if 'Falta' not in df_resumo_cli.columns: df_resumo_cli['Falta'] = 0
-                    
-                    df_resumo_cli['Total de Itens'] = df_resumo_cli['Dano'] + df_resumo_cli['Falta']
-                    df_resumo_cli = pd.merge(df_resumo_cli, resumo_recorrencia[['Cliente', 'Qtd_Periodos']], on='Cliente', how='left')
-                    df_resumo_cli = df_resumo_cli.sort_values(by=['Qtd_Periodos', 'Total de Itens'], ascending=[False, False]).reset_index(drop=True)
-                    df_resumo_cli = df_resumo_cli.rename(columns={'Dano': '📦 Itens Danificados', 'Falta': '📉 Itens Faltantes', 'Qtd_Periodos': '📅 Meses Afetados'})
-                    st.dataframe(df_resumo_cli, use_container_width=True)
-                else: 
-                    st.info("Nenhum cliente válido para análise na seleção atual.")
-                    df_resumo_cli = None
-            else:
-                st.info("Base de dados vazia para os filtros atuais.")
-                df_resumo_cli = None
-                
-            resumo_6 = ["Acompanhamento dos Clientes mais críticos."]
-            pdf_aba6 = gerar_pdf_dinamico("Dossie - Clientes Criticos", resumo_6, df_resumo_cli if df_resumo_cli is not None else None)
-            st.download_button("📄 Baixar Relatório: Recor. Cliente (PDF)", data=pdf_aba6, file_name="Recorrencia_Clientes.pdf", mime="application/pdf", key="pdf_aba6")
+                    top_motoristas = resumo_recorrencia_m.head(15)['Motorista'].tolist()
+                    df_uni_top_mot = df_mot_valido[df_mot_valido['Motorista'].isin(top_motoristas)]
 
-        elif menu_selecionado == "Recorrência Cruzada":
-            st.subheader("🔁 Recorrência Cruzada — Motoristas × Clientes")
-            st.caption("Pares de motorista + cliente com mais ocorrências no período filtrado.")
+                    fig_heat_m, df_recor_m = plot_heatmap_recorrencia(df_uni_top_mot, 'Motorista')
+                    if fig_heat_m:
+                        fig_heat_m.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
+                        st.plotly_chart(fig_heat_m, use_container_width=True)
 
-            _invalidos = ['NÃO IDENTIFICADO', 'NAO IDENTIFICADO', 'NAN', '', 'N/A']
-            if not df_uni.empty:
-                df_cx = df_uni[
-                    ~df_uni['Motorista'].str.upper().isin(_invalidos) &
-                    ~df_uni['Cliente'].str.upper().isin(_invalidos)
-                ].copy()
+                        st.markdown("**📋 Motoristas de Atenção — Visão Consolidada:**")
+                        df_resumo_mot = df_uni_top_mot.pivot_table(index='Motorista', columns='Tipo_Ocorrencia', values='Quantidade', aggfunc='sum', fill_value=0).reset_index()
+                        if 'Dano' not in df_resumo_mot.columns: df_resumo_mot['Dano'] = 0
+                        if 'Falta' not in df_resumo_mot.columns: df_resumo_mot['Falta'] = 0
 
-                if not df_cx.empty:
-                    # Filial principal de cada motorista
-                    filial_mot = (
-                        df_cx.groupby('Motorista')['Filial']
-                        .agg(lambda x: x.mode().iloc[0] if not x.mode().empty else '')
-                        .reset_index()
-                        .rename(columns={'Filial': 'Filial do Motorista'})
-                    )
-
-                    df_pairs = (
-                        df_cx.groupby(['Motorista', 'Cliente', 'Tipo_Ocorrencia'])['Quantidade']
-                        .sum()
-                        .reset_index()
-                    )
-                    df_pivot = df_pairs.pivot_table(
-                        index=['Motorista', 'Cliente'],
-                        columns='Tipo_Ocorrencia',
-                        values='Quantidade',
-                        aggfunc='sum',
-                        fill_value=0
-                    ).reset_index()
-                    df_pivot.columns.name = None
-                    if 'Dano' not in df_pivot.columns: df_pivot['Dano'] = 0
-                    if 'Falta' not in df_pivot.columns: df_pivot['Falta'] = 0
-
-                    df_pivot['Total'] = df_pivot['Dano'] + df_pivot['Falta']
-                    df_pivot = pd.merge(df_pivot, filial_mot, on='Motorista', how='left')
-                    df_pivot = df_pivot.sort_values('Total', ascending=False).reset_index(drop=True)
-                    df_pivot = df_pivot.rename(columns={
-                        'Dano': '📦 Danos', 'Falta': '📉 Faltas', 'Total': '🔢 Total'
-                    })
-
-                    col_top, col_tipo = st.columns([1, 2])
-                    top_n = col_top.slider("Exibir top pares:", 10, 100, 30, step=10)
-                    tipo_filtro = col_tipo.radio("Tipo:", ["Todos", "Só Danos", "Só Faltas"], horizontal=True)
-
-                    df_show = df_pivot.copy()
-                    if tipo_filtro == "Só Danos":
-                        df_show = df_show[df_show['📦 Danos'] > 0]
-                    elif tipo_filtro == "Só Faltas":
-                        df_show = df_show[df_show['📉 Faltas'] > 0]
-
-                    st.dataframe(
-                        df_show[['Motorista', 'Cliente', 'Filial do Motorista', '📦 Danos', '📉 Faltas', '🔢 Total']]
-                        .head(top_n),
-                        use_container_width=True
-                    )
-
-                    st.caption(f"Total de pares únicos no período: {len(df_pivot):,}")
+                        df_resumo_mot['Total de Itens'] = df_resumo_mot['Dano'] + df_resumo_mot['Falta']
+                        df_resumo_mot = pd.merge(df_resumo_mot, resumo_recorrencia_m[['Motorista', 'Qtd_Periodos']], on='Motorista', how='left')
+                        df_resumo_mot = df_resumo_mot.sort_values(by=['Qtd_Periodos', 'Total de Itens'], ascending=[False, False]).reset_index(drop=True)
+                        df_resumo_mot = df_resumo_mot.rename(columns={'Dano': '📦 Itens Danificados', 'Falta': '📉 Itens Faltantes', 'Qtd_Periodos': '📅 Meses Afetados'})
+                        st.dataframe(df_resumo_mot, use_container_width=True)
+                    else: 
+                        st.info("Ajuste os filtros para visualizar a recorrência.")
+                        df_resumo_mot = None
                 else:
-                    st.info("Sem dados com motorista e cliente identificados no período selecionado.")
-            else:
-                st.info("Base de dados vazia para os filtros atuais.")
+                    st.info("Base de dados vazia para os filtros atuais.")
+                    df_resumo_mot = None
+
+                resumo_5 = ["Acompanhamento dos Motoristas mais críticos."]
+                pdf_aba5 = gerar_pdf_dinamico("Dossiê - Motoristas Críticos", resumo_5, df_resumo_mot if df_resumo_mot is not None else None)
+                st.download_button("📄 Baixar Relatório: Recor. Motorista (PDF)", data=pdf_aba5, file_name="Recorrencia_Motoristas.pdf", mime="application/pdf", key="pdf_aba5")
+
+            with tab_cli:
+                st.subheader("🔄 Histórico Mensal de Clientes Reincidentes")
+                if not df_uni.empty:
+                    df_cli_valido = df_uni[~df_uni['Cliente'].str.upper().isin(['NÃO IDENTIFICADO', 'NAN', '', 'N/A'])].copy()
+                    resumo_recorrencia = df_cli_valido.groupby('Cliente').agg(
+                        Qtd_Periodos=('Periodo', 'nunique'), Total_Itens=('Quantidade', 'sum')
+                    ).reset_index().sort_values(by=['Total_Itens', 'Qtd_Periodos'], ascending=[False, False])
+
+                    top_clientes = resumo_recorrencia.head(15)['Cliente'].tolist()
+                    df_uni_top_clientes = df_cli_valido[df_cli_valido['Cliente'].isin(top_clientes)]
+
+                    fig_heat_c, df_recor_c = plot_heatmap_recorrencia(df_uni_top_clientes, 'Cliente')
+
+                    if fig_heat_c: 
+                        fig_heat_c.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font=dict(color='#ffffff'))
+                        st.plotly_chart(fig_heat_c, use_container_width=True)
+
+                        st.markdown("**📋 Clientes Críticos — Visão Consolidada:**")
+                        df_resumo_cli = df_uni_top_clientes.pivot_table(index='Cliente', columns='Tipo_Ocorrencia', values='Quantidade', aggfunc='sum', fill_value=0).reset_index()
+                        if 'Dano' not in df_resumo_cli.columns: df_resumo_cli['Dano'] = 0
+                        if 'Falta' not in df_resumo_cli.columns: df_resumo_cli['Falta'] = 0
+
+                        df_resumo_cli['Total de Itens'] = df_resumo_cli['Dano'] + df_resumo_cli['Falta']
+                        df_resumo_cli = pd.merge(df_resumo_cli, resumo_recorrencia[['Cliente', 'Qtd_Periodos']], on='Cliente', how='left')
+                        df_resumo_cli = df_resumo_cli.sort_values(by=['Qtd_Periodos', 'Total de Itens'], ascending=[False, False]).reset_index(drop=True)
+                        df_resumo_cli = df_resumo_cli.rename(columns={'Dano': '📦 Itens Danificados', 'Falta': '📉 Itens Faltantes', 'Qtd_Periodos': '📅 Meses Afetados'})
+                        st.dataframe(df_resumo_cli, use_container_width=True)
+                    else: 
+                        st.info("Nenhum cliente válido para análise na seleção atual.")
+                        df_resumo_cli = None
+                else:
+                    st.info("Base de dados vazia para os filtros atuais.")
+                    df_resumo_cli = None
+
+                resumo_6 = ["Acompanhamento dos Clientes mais críticos."]
+                pdf_aba6 = gerar_pdf_dinamico("Dossie - Clientes Criticos", resumo_6, df_resumo_cli if df_resumo_cli is not None else None)
+                st.download_button("📄 Baixar Relatório: Recor. Cliente (PDF)", data=pdf_aba6, file_name="Recorrencia_Clientes.pdf", mime="application/pdf", key="pdf_aba6")
+
+            with tab_cruz:
+                st.subheader("🔁 Recorrência Cruzada — Motoristas × Clientes")
+                st.caption("Pares de motorista + cliente com mais ocorrências no período filtrado.")
+
+                _invalidos = ['NÃO IDENTIFICADO', 'NAO IDENTIFICADO', 'NAN', '', 'N/A']
+                if not df_uni.empty:
+                    df_cx = df_uni[
+                        ~df_uni['Motorista'].str.upper().isin(_invalidos) &
+                        ~df_uni['Cliente'].str.upper().isin(_invalidos)
+                    ].copy()
+
+                    if not df_cx.empty:
+                        # Filial principal de cada motorista
+                        filial_mot = (
+                            df_cx.groupby('Motorista')['Filial']
+                            .agg(lambda x: x.mode().iloc[0] if not x.mode().empty else '')
+                            .reset_index()
+                            .rename(columns={'Filial': 'Filial do Motorista'})
+                        )
+
+                        df_pairs = (
+                            df_cx.groupby(['Motorista', 'Cliente', 'Tipo_Ocorrencia'])['Quantidade']
+                            .sum()
+                            .reset_index()
+                        )
+                        df_pivot = df_pairs.pivot_table(
+                            index=['Motorista', 'Cliente'],
+                            columns='Tipo_Ocorrencia',
+                            values='Quantidade',
+                            aggfunc='sum',
+                            fill_value=0
+                        ).reset_index()
+                        df_pivot.columns.name = None
+                        if 'Dano' not in df_pivot.columns: df_pivot['Dano'] = 0
+                        if 'Falta' not in df_pivot.columns: df_pivot['Falta'] = 0
+
+                        df_pivot['Total'] = df_pivot['Dano'] + df_pivot['Falta']
+                        df_pivot = pd.merge(df_pivot, filial_mot, on='Motorista', how='left')
+                        df_pivot = df_pivot.sort_values('Total', ascending=False).reset_index(drop=True)
+                        df_pivot = df_pivot.rename(columns={
+                            'Dano': '📦 Danos', 'Falta': '📉 Faltas', 'Total': '🔢 Total'
+                        })
+
+                        col_top, col_tipo = st.columns([1, 2])
+                        top_n = col_top.slider("Exibir top pares:", 10, 100, 30, step=10)
+                        tipo_filtro = col_tipo.radio("Tipo:", ["Todos", "Só Danos", "Só Faltas"], horizontal=True)
+
+                        df_show = df_pivot.copy()
+                        if tipo_filtro == "Só Danos":
+                            df_show = df_show[df_show['📦 Danos'] > 0]
+                        elif tipo_filtro == "Só Faltas":
+                            df_show = df_show[df_show['📉 Faltas'] > 0]
+
+                        st.dataframe(
+                            df_show[['Motorista', 'Cliente', 'Filial do Motorista', '📦 Danos', '📉 Faltas', '🔢 Total']]
+                            .head(top_n),
+                            use_container_width=True
+                        )
+
+                        st.caption(f"Total de pares únicos no período: {len(df_pivot):,}")
+                    else:
+                        st.info("Sem dados com motorista e cliente identificados no período selecionado.")
+                else:
+                    st.info("Base de dados vazia para os filtros atuais.")
 
         elif menu_selecionado == "Rotas":
             st.subheader("📍 Detalhamento e Inteligência por Rota")
@@ -836,7 +840,77 @@ elif st.session_state.get("authentication_status"):
                     _render_top_geo(df_faltas, dias_red_scale, dias_red_scale, "geo_faltas")
             else:
                 st.warning("⚠️ Para visualizar a inteligência geográfica, o arquivo 'relatorionotas.csv' precisa estar carregado corretamente.")
-                
+
+        elif menu_selecionado == "SLA × Ocorrência":
+            st.subheader("⏱️ SLA × Ocorrência — o atraso está ligado ao problema?")
+            st.caption("Compara o % de ocorrências entregues com atraso contra o % de atraso no universo de entregas. "
+                       "Se a ocorrência atrasa mais que a média, o atraso se associa ao dano/falta — direciona a ação para "
+                       "roteirização/capacidade, não só para o motorista.")
+
+            if 'Efetividade' not in df_uni.columns:
+                st.warning("Coluna de Efetividade ainda não disponível. Rode o pipeline e faça o Reboot do app.")
+            else:
+                def _pct_atraso(dfx):
+                    base = dfx[dfx['Efetividade'].isin(['Atrasado', 'Dentro do Prazo'])]
+                    if base.empty:
+                        return None, 0
+                    return round((base['Efetividade'] == 'Atrasado').mean() * 100, 1), len(base)
+
+                pct_oc_d, n_d = _pct_atraso(df_danos)
+                pct_oc_f, n_f = _pct_atraso(df_faltas)
+                univ_d = sla_info.get('univ_pct_atraso_danos')
+                univ_f = sla_info.get('univ_pct_atraso_faltas')
+
+                st.markdown("#### 📦 Danos")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Ocorrências atrasadas", f"{pct_oc_d:.1f}%" if pct_oc_d is not None else "—", f"{n_d} registros", delta_color="off")
+                c2.metric("Universo atrasado (média)", f"{univ_d:.1f}%" if univ_d is not None else "—")
+                if pct_oc_d is not None and univ_d:
+                    c3.metric("Ocorrência vs média", f"{pct_oc_d / univ_d:.1f}×", delta=f"+{pct_oc_d - univ_d:.1f} p.p.", delta_color="inverse")
+
+                st.markdown("#### 📉 Faltas")
+                c4, c5, c6 = st.columns(3)
+                c4.metric("Ocorrências atrasadas", f"{pct_oc_f:.1f}%" if pct_oc_f is not None else "—", f"{n_f} registros", delta_color="off")
+                c5.metric("Universo atrasado (média)", f"{univ_f:.1f}%" if univ_f is not None else "—")
+                if pct_oc_f is not None and univ_f:
+                    c6.metric("Ocorrência vs média", f"{pct_oc_f / univ_f:.1f}×", delta=f"+{pct_oc_f - univ_f:.1f} p.p.", delta_color="inverse")
+
+                st.write("---")
+
+                comp = []
+                if pct_oc_d is not None:
+                    comp.append({'Tipo': 'Danos', 'Grupo': 'Ocorrências', '% Atraso': pct_oc_d})
+                    if univ_d is not None:
+                        comp.append({'Tipo': 'Danos', 'Grupo': 'Universo', '% Atraso': univ_d})
+                if pct_oc_f is not None:
+                    comp.append({'Tipo': 'Faltas', 'Grupo': 'Ocorrências', '% Atraso': pct_oc_f})
+                    if univ_f is not None:
+                        comp.append({'Tipo': 'Faltas', 'Grupo': 'Universo', '% Atraso': univ_f})
+                if comp:
+                    dfc = pd.DataFrame(comp)
+                    fig_sla = px.bar(dfc, x='Tipo', y='% Atraso', color='Grupo', barmode='group', text_auto='.1f',
+                                     color_discrete_map={'Ocorrências': '#C47A77', 'Universo': '#5BA8B8'},
+                                     title="% de entregas atrasadas: ocorrências vs universo")
+                    fig_sla.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                                          font=dict(color='#ffffff'), yaxis_title="% atrasado", xaxis_title="")
+                    st.plotly_chart(fig_sla, use_container_width=True)
+
+                st.markdown("#### 🏢 Filiais — % de ocorrências entregues com atraso")
+                base_fil = df_uni[df_uni['Efetividade'].isin(['Atrasado', 'Dentro do Prazo'])].copy()
+                if not base_fil.empty:
+                    base_fil['_atr'] = (base_fil['Efetividade'] == 'Atrasado').astype(int)
+                    g = base_fil.groupby('Filial').agg(Ocorrencias=('_atr', 'size'), Atrasadas=('_atr', 'sum')).reset_index()
+                    g = g[g['Ocorrencias'] >= 10]
+                    g['% Atrasadas'] = (g['Atrasadas'] / g['Ocorrencias'] * 100).round(1)
+                    g = g.sort_values('% Atrasadas', ascending=False)
+                    st.dataframe(
+                        g[['Filial', 'Ocorrencias', 'Atrasadas', '% Atrasadas']].rename(columns={'Ocorrencias': 'Ocorrências'}),
+                        use_container_width=True
+                    )
+                    st.caption("Apenas filiais com ≥ 10 ocorrências no período. Quanto maior o %, mais o problema coincide com entrega atrasada.")
+                else:
+                    st.info("Sem dados de efetividade para as ocorrências no período selecionado.")
+
         elif menu_selecionado == "Tratativas":
             st.subheader("📝 Controle de Tratativas")
             link_consolidado = "https://docs.google.com/spreadsheets/d/12PurxfsZrm7YH8VP3EU2kyIJ-G7cVbt_CEj2l8cXsJQ/export?format=xlsx"

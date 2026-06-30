@@ -107,10 +107,30 @@ def load_data():
     # 4. CARREGAR MAPAS
     # ==========================================
     df_ped_geo = pd.DataFrame()
+    mapa_ef_danos, mapa_ef_faltas = {}, {}
+    sla_info = {'univ_pct_atraso_danos': None, 'univ_pct_atraso_faltas': None}
     try:
         df_notas = pd.read_csv("relatorionotas.csv", sep=";", encoding="latin-1", skiprows=7)
         df_falta = pd.read_csv("relatorionotas_falta.csv", sep=";", encoding="latin-1", skiprows=7)
         df_ref = pd.concat([df_notas, df_falta], ignore_index=True)
+
+        # Mapa Pedido -> Efetividade SLA ('Dentro do Prazo' / 'Atrasado'), separado por base:
+        # Danos cruza com relatorionotas; Faltas com relatorionotas_falta (cruzar errado = ~1% match).
+        # Usa só a categórica Efetividade (limpa, 100% preenchida); o Offset numérico tem lixo e foi descartado.
+        def _mapa_efetividade(dfn):
+            colmap = {str(c).strip(): c for c in dfn.columns}
+            cped, cef = colmap.get('Pedido'), colmap.get('Efetividade')
+            if not cped or not cef:
+                return {}, None
+            ped = _norm_chave(dfn[cped])
+            ser = dfn[cef].astype(str).str.strip()
+            mask = ped.ne('') & ped.ne('nan')
+            mapa = dict(zip(ped[mask], ser[mask]))
+            pct_atraso = round((ser[mask] == 'Atrasado').mean() * 100, 1) if mask.any() else None
+            return mapa, pct_atraso
+
+        mapa_ef_danos, sla_info['univ_pct_atraso_danos'] = _mapa_efetividade(df_notas)
+        mapa_ef_faltas, sla_info['univ_pct_atraso_faltas'] = _mapa_efetividade(df_falta)
 
         # Mapa Pedido -> Cidade/Bairro (cruzamento confiável: 100% das ocorrencias batem por pedido,
         # ao contrario da Rota, cuja codificacao difere entre Natura e Diaslog)
@@ -184,6 +204,32 @@ def load_data():
     df_unificado = _enriquecer_geo(df_unificado)
 
     # ==========================================
+    # 4c. ENRIQUECER COM EFETIVIDADE/SLA (POR PEDIDO)
+    # ==========================================
+    def _enriquecer_sla(df, mapa):
+        if df.empty or 'Pedido' not in df.columns:
+            return df
+        if not mapa:
+            df['Efetividade'] = 'Não Identificado'
+            return df
+        chave = _norm_chave(df['Pedido'])
+        df['Efetividade'] = chave.map(mapa).fillna('Não Identificado')
+        return df
+
+    df_danos = _enriquecer_sla(df_danos, mapa_ef_danos)
+    df_faltas = _enriquecer_sla(df_faltas, mapa_ef_faltas)
+    # df_unificado: cada linha usa o mapa do seu tipo de ocorrência
+    if not df_unificado.empty and 'Pedido' in df_unificado.columns:
+        chave_u = _norm_chave(df_unificado['Pedido'])
+        ef_u = pd.Series('Não Identificado', index=df_unificado.index, dtype=object)
+        mask_d = df_unificado['Tipo_Ocorrencia'] == 'Dano'
+        if mapa_ef_danos:
+            ef_u.loc[mask_d] = chave_u[mask_d].map(mapa_ef_danos).fillna('Não Identificado')
+        if mapa_ef_faltas:
+            ef_u.loc[~mask_d] = chave_u[~mask_d].map(mapa_ef_faltas).fillna('Não Identificado')
+        df_unificado['Efetividade'] = ef_u
+
+    # ==========================================
     # 5. CARREGAR TRATATIVAS LOCAIS
     # ==========================================
     try:
@@ -194,4 +240,4 @@ def load_data():
         # Aqui não precisamos de st.warning na tela principal porque as tratativas agora vêm da aba 8 (Nuvem).
         df_trat1, df_trat2 = pd.DataFrame(), pd.DataFrame()
 
-    return df_danos, df_faltas, df_unificado, df_mapa_agg, df_coord_agg, df_trat1, df_trat2
+    return df_danos, df_faltas, df_unificado, df_mapa_agg, df_coord_agg, df_trat1, df_trat2, sla_info
