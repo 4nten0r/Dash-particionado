@@ -378,7 +378,7 @@ elif st.session_state.get("authentication_status"):
 
         menu_selecionado = option_menu(
             menu_title=None,
-            options=["Resumo Executivo", "Visão Geral", "Danos", "Faltas", "Curva ABC", "Recorrências", "Rotas", "SLA × Ocorrência", "Tratativas", "Alertas Operacionais", "Plano de Ação", "Tendências"],
+            options=["Resumo Executivo", "Visão Geral", "Danos", "Faltas", "Curva ABC", "Recorrências", "Rotas", "SLA (em teste)", "Tratativas", "Alertas Operacionais", "Plano de Ação", "Tendências"],
             icons=["clipboard2-data", "globe", "box-seam", "graph-down-arrow", "bar-chart-steps", "arrow-repeat", "map", "clock-history", "clipboard2-check", "bell", "kanban", "graph-up-arrow"],
             default_index=0,
             orientation="horizontal",
@@ -841,8 +841,8 @@ elif st.session_state.get("authentication_status"):
             else:
                 st.warning("⚠️ Para visualizar a inteligência geográfica, o arquivo 'relatorionotas.csv' precisa estar carregado corretamente.")
 
-        elif menu_selecionado == "SLA × Ocorrência":
-            st.subheader("⏱️ SLA × Ocorrência — o atraso está ligado ao problema?")
+        elif menu_selecionado == "SLA (em teste)":
+            st.subheader("⏱️ SLA × Ocorrência — o atraso está ligado ao problema? (em fase de teste)")
             st.caption("Compara o % de ocorrências entregues com atraso contra o % de atraso no universo de entregas. "
                        "Se a ocorrência atrasa mais que a média, o atraso se associa ao dano/falta — direciona a ação para "
                        "roteirização/capacidade, não só para o motorista.")
