@@ -42,6 +42,21 @@ def plot_heatmap_recorrencia(df, coluna_alvo):
         if df_valido.empty:
             return None, pd.DataFrame()
 
+        # Opção A: inclui filial principal no rótulo do eixo Y
+        if 'Filial' in df_valido.columns:
+            filial_map = (
+                df_valido.groupby(coluna_alvo)['Filial']
+                .agg(lambda x: x.mode().iloc[0] if not x.dropna().empty else '')
+                .to_dict()
+            )
+            df_valido['_row_label'] = (
+                df_valido[coluna_alvo] + '  |  ' +
+                df_valido[coluna_alvo].map(filial_map).fillna('')
+            )
+        else:
+            df_valido['_row_label'] = df_valido[coluna_alvo]
+        col_index = '_row_label'
+
         # Usa Ano-Mês derivado de Data_Filtro para distinguir anos diferentes
         # (evita que Set/2025 e Set/2026 apareçam na mesma coluna)
         if 'Data_Filtro' in df_valido.columns:
@@ -53,7 +68,7 @@ def plot_heatmap_recorrencia(df, coluna_alvo):
             col_periodo = '_AnoMes'
 
         pivot = df_valido.pivot_table(
-            index=coluna_alvo,
+            index=col_index,
             columns=col_periodo,
             values='Quantidade',
             aggfunc='sum',

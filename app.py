@@ -378,8 +378,8 @@ elif st.session_state.get("authentication_status"):
 
         menu_selecionado = option_menu(
             menu_title=None,
-            options=["Resumo Executivo", "Visão Geral", "Danos", "Faltas", "Curva ABC", "Motoristas", "Clientes", "Rotas", "Tratativas", "Alertas Operacionais", "Plano de Ação", "Tendências"],
-            icons=["clipboard2-data", "globe", "box-seam", "graph-down-arrow", "bar-chart-steps", "truck", "people-fill", "map", "clipboard2-check", "bell", "kanban", "graph-up-arrow"],
+            options=["Resumo Executivo", "Visão Geral", "Danos", "Faltas", "Curva ABC", "Motoristas", "Clientes", "Recorrência Cruzada", "Rotas", "Tratativas", "Alertas Operacionais", "Plano de Ação", "Tendências"],
+            icons=["clipboard2-data", "globe", "box-seam", "graph-down-arrow", "bar-chart-steps", "truck", "people-fill", "arrow-left-right", "map", "clipboard2-check", "bell", "kanban", "graph-up-arrow"],
             default_index=0,
             orientation="horizontal",
             styles={
@@ -663,6 +663,71 @@ elif st.session_state.get("authentication_status"):
             resumo_6 = ["Acompanhamento dos Clientes mais críticos."]
             pdf_aba6 = gerar_pdf_dinamico("Dossie - Clientes Criticos", resumo_6, df_resumo_cli if df_resumo_cli is not None else None)
             st.download_button("📄 Baixar Relatório: Recor. Cliente (PDF)", data=pdf_aba6, file_name="Recorrencia_Clientes.pdf", mime="application/pdf", key="pdf_aba6")
+
+        elif menu_selecionado == "Recorrência Cruzada":
+            st.subheader("🔁 Recorrência Cruzada — Motoristas × Clientes")
+            st.caption("Pares de motorista + cliente com mais ocorrências no período filtrado.")
+
+            _invalidos = ['NÃO IDENTIFICADO', 'NAO IDENTIFICADO', 'NAN', '', 'N/A']
+            if not df_uni.empty:
+                df_cx = df_uni[
+                    ~df_uni['Motorista'].str.upper().isin(_invalidos) &
+                    ~df_uni['Cliente'].str.upper().isin(_invalidos)
+                ].copy()
+
+                if not df_cx.empty:
+                    # Filial principal de cada motorista
+                    filial_mot = (
+                        df_cx.groupby('Motorista')['Filial']
+                        .agg(lambda x: x.mode().iloc[0] if not x.mode().empty else '')
+                        .reset_index()
+                        .rename(columns={'Filial': 'Filial do Motorista'})
+                    )
+
+                    df_pairs = (
+                        df_cx.groupby(['Motorista', 'Cliente', 'Tipo_Ocorrencia'])['Quantidade']
+                        .sum()
+                        .reset_index()
+                    )
+                    df_pivot = df_pairs.pivot_table(
+                        index=['Motorista', 'Cliente'],
+                        columns='Tipo_Ocorrencia',
+                        values='Quantidade',
+                        aggfunc='sum',
+                        fill_value=0
+                    ).reset_index()
+                    df_pivot.columns.name = None
+                    if 'Dano' not in df_pivot.columns: df_pivot['Dano'] = 0
+                    if 'Falta' not in df_pivot.columns: df_pivot['Falta'] = 0
+
+                    df_pivot['Total'] = df_pivot['Dano'] + df_pivot['Falta']
+                    df_pivot = pd.merge(df_pivot, filial_mot, on='Motorista', how='left')
+                    df_pivot = df_pivot.sort_values('Total', ascending=False).reset_index(drop=True)
+                    df_pivot = df_pivot.rename(columns={
+                        'Dano': '📦 Danos', 'Falta': '📉 Faltas', 'Total': '🔢 Total'
+                    })
+
+                    col_top, col_tipo = st.columns([1, 2])
+                    top_n = col_top.slider("Exibir top pares:", 10, 100, 30, step=10)
+                    tipo_filtro = col_tipo.radio("Tipo:", ["Todos", "Só Danos", "Só Faltas"], horizontal=True)
+
+                    df_show = df_pivot.copy()
+                    if tipo_filtro == "Só Danos":
+                        df_show = df_show[df_show['📦 Danos'] > 0]
+                    elif tipo_filtro == "Só Faltas":
+                        df_show = df_show[df_show['📉 Faltas'] > 0]
+
+                    st.dataframe(
+                        df_show[['Motorista', 'Cliente', 'Filial do Motorista', '📦 Danos', '📉 Faltas', '🔢 Total']]
+                        .head(top_n),
+                        use_container_width=True
+                    )
+
+                    st.caption(f"Total de pares únicos no período: {len(df_pivot):,}")
+                else:
+                    st.info("Sem dados com motorista e cliente identificados no período selecionado.")
+            else:
+                st.info("Base de dados vazia para os filtros atuais.")
 
         elif menu_selecionado == "Rotas":
             st.subheader("📍 Detalhamento e Inteligência por Rota")
