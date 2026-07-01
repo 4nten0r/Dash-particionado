@@ -315,6 +315,19 @@ def _etapa_git_push() -> None:
         print("  💡  Crie o arquivo .env na raiz com: GITHUB_TOKEN=seu_token_aqui")
         return
 
+    # Verifica se o Git está instalado nesta máquina
+    ok_git, _ = _git(["--version"])
+    if not ok_git:
+        print("  ⚠️  Git não está instalado nesta máquina — pulando push automático.")
+        print("  💡  Instale o Git para Windows: https://git-scm.com/download/win")
+        return
+
+    # Garante identidade do Git (commit/merge exigem isso; em máquina nova pode não estar setado)
+    _, nome_cfg = _git(["config", "user.name"])
+    if not nome_cfg.strip():
+        _git(["config", "user.name", "Pipeline Dias+"])
+        _git(["config", "user.email", "pipeline@diasmais.local"])
+
     hoje = date.today().strftime("%d/%m/%Y")
     repo_url = f"https://{token}@github.com/icarocharleaux-mm/Dash-particionado.git"
 
@@ -342,27 +355,30 @@ def _etapa_git_push() -> None:
     else:
         print("  ✅ git commit")
 
-    # Sincroniza com o remoto ANTES do push (evita rejeição "fetch first" quando o
-    # repositório foi atualizado em outra máquina — ex.: melhorias do painel publicadas pelo dev).
-    # -X ours: em conflito, mantém os CSVs recém-gerados; o código do painel vem do remoto sem conflito.
-    print("  ↻ Sincronizando com o GitHub (pull antes do push)...")
-    ok, out = _git(["pull", "--no-rebase", "--no-edit", "-X", "ours", repo_url, "main"])
-    out_seguro = out.replace(token, "***") if token else out
-    if not ok:
-        _git(["merge", "--abort"])       # desfaz merge pela metade, deixa o repo intacto
-        print(f"  ❌ Falha ao sincronizar (pull): {out_seguro}")
-        print("     Repositório mantido intacto. Rode manualmente: git pull --no-rebase -X ours")
-        return
-    print("  ✅ Sincronizado com o remoto.")
+    # Sincroniza + push com retry. Como 3 máquinas usam o mesmo repositório, uma pode
+    # empurrar quase ao mesmo tempo que a outra. A cada tentativa: pull (-X ours mantém
+    # os CSVs recém-gerados) e push; se o push for rejeitado porque outra máquina empurrou
+    # nesse meio-tempo, ressincroniza e tenta de novo (até 3 vezes).
+    enviado = False
+    for tentativa in range(1, 4):
+        print(f"  ↻ Sincronizando com o GitHub (tentativa {tentativa}/3)...")
+        ok, out = _git(["pull", "--no-rebase", "--no-edit", "-X", "ours", repo_url, "main"])
+        if not ok:
+            _git(["merge", "--abort"])   # desfaz merge pela metade, deixa o repo intacto
+            print(f"     ⚠️  pull falhou: {out.replace(token, '***')}")
+            continue
+        ok, out = _git(["push", repo_url, "main"])
+        if ok:
+            enviado = True
+            break
+        print(f"     ↻ push rejeitado, ressincronizando: {out.replace(token, '***')}")
 
-    # git push (token embutido na URL temporariamente)
-    ok, out = _git(["push", repo_url, "main"])
-    out_seguro = out.replace(token, "***") if token else out
-    if ok:
+    if enviado:
         print("  ✅ Push realizado com sucesso!")
-        print(f"  🌐 https://github.com/icarocharleaux-mm/Dash-particionado")
+        print("  🌐 https://github.com/icarocharleaux-mm/Dash-particionado")
     else:
-        print(f"  ❌ Erro no push: {out_seguro}")
+        print("  ❌ Não foi possível enviar após 3 tentativas.")
+        print("     Rode manualmente: git pull --no-rebase -X ours origin main  e depois  git push origin main")
 
 
 # ---------------------------------------------------------------------------
