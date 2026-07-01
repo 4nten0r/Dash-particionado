@@ -332,12 +332,15 @@ def _etapa_git_push() -> None:
     ok, out = _git(["commit", "-m", f"Atualiza bases finais — {hoje}"])
     _sem_mudanca = ("nothing to commit", "no changes added to commit")
     if not ok and any(m in out.lower() for m in _sem_mudanca):
-        print("  ✅ Nada de novo para commitar — arquivos já atualizados.")
-        return
-    print(f"  {'✅' if ok else '❌'} git commit")
-    if not ok:
+        # Sem dados novos AGORA, mas pode existir commit local de execução anterior
+        # que ainda não foi enviado — segue para sincronizar e empurrar mesmo assim.
+        print("  ℹ️  Nada de novo para commitar; verificando commits pendentes para enviar...")
+    elif not ok:
+        print("  ❌ git commit")
         print(f"     {out}")
         return
+    else:
+        print("  ✅ git commit")
 
     # Sincroniza com o remoto ANTES do push (evita rejeição "fetch first" quando o
     # repositório foi atualizado em outra máquina — ex.: melhorias do painel publicadas pelo dev).
