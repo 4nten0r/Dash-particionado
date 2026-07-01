@@ -18,6 +18,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
+
 import pandas as pd
 
 from automacao_diaslog import baixar_relatorio_notas
@@ -151,11 +152,15 @@ async def _etapa_relatorios(headless: bool) -> None:
 def _etapa_limpeza_faltas() -> None:
     print("\n=== ETAPA 2 — Limpeza Faltas ===")
     subprocess.run([sys.executable, "limpeza_falta.py"], cwd=str(BASE2), check=True)
-    src = BASE2 / "base_falta_pronta.csv"
-    dst = ROOT / "base_falta_pronta.csv"
-    if src.exists():
-        shutil.copy2(src, dst)
-        print(f"  ✅ Copiado para raiz: {dst.name}")
+    # Copia para a raiz os arquivos que o dashboard (dados.py) lê de lá
+    for nome in ("base_falta_pronta.csv", "relatorionotas_falta.csv"):
+        src = BASE2 / nome
+        dst = ROOT / nome
+        if src.exists():
+            shutil.copy2(src, dst)
+            print(f"  ✅ Copiado para raiz: {nome}")
+        else:
+            print(f"  ⚠️  Não encontrado em BASE2: {nome}")
 
 
 # ---------------------------------------------------------------------------
@@ -174,22 +179,187 @@ def _etapa_limpeza_danos(data_inicio: str, data_fim: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# ETAPA 4 — Git commit e push
+# ETAPA 4 — Gerar Excel de tratativas (Danos + Faltas em abas separadas)
 # ---------------------------------------------------------------------------
 
-def _etapa_git_push() -> None:
-    print("\n=== ETAPA 4 — Git Commit & Push ===")
-    hoje = date.today().strftime("%d/%m/%Y")
-    for cmd in [
-        ["git", "add", "-A"],
-        ["git", "commit", "-m", f"Atualização dados {hoje}"],
-        ["git", "push"],
-    ]:
-        r = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True)
-        if r.returncode != 0:
-            print(f"  ⚠️  {' '.join(cmd)}: {r.stderr.strip()}")
+_ONEDRIVE = Path(os.environ.get("OneDrive", Path.home() / "OneDrive"))
+_NOME_EXCEL = "tratativas.xlsx"   # nome fixo → link do OneDrive nunca muda
+
+
+def _etapa_gerar_excel_tratativas() -> None:
+    print("\n=== ETAPA 4 — Gerando Excel de Tratativas ===")
+
+    arquivo_danos  = ROOT / "tabela_justificativas_danos.csv"
+    arquivo_faltas = ROOT / "tabela_justificativas_faltas.csv"
+
+    if not arquivo_danos.exists() or not arquivo_faltas.exists():
+        print("  ⚠️  Arquivos de justificativas não encontrados. Pulando etapa.")
+        return
+
+    df_danos  = _ler_csv(arquivo_danos)
+    df_faltas = _ler_csv(arquivo_faltas)
+
+    # Salva na pasta outputs/data/ local
+    hoje = date.today().strftime("%d-%m-%Y")
+    pasta_saida = ROOT / "outputs" / hoje
+    pasta_saida.mkdir(parents=True, exist_ok=True)
+    destino_local = pasta_saida / _NOME_EXCEL
+
+    # Salva também direto no OneDrive (sincroniza automaticamente)
+    destino_onedrive = _ONEDRIVE / _NOME_EXCEL
+
+    # Salva na pasta outputs/data/ local (sempre)
+    with pd.ExcelWriter(str(destino_local), engine="openpyxl") as writer:
+        df_danos.to_excel(writer,  sheet_name="Danos",  index=False)
+        df_faltas.to_excel(writer, sheet_name="Faltas", index=False)
+    print(f"  ✅ Salvo localmente: {destino_local}")
+
+    # Salva no OneDrive (só se a pasta existir — funciona apenas no PC do Ícaro)
+    if _ONEDRIVE.exists():
+        with pd.ExcelWriter(str(destino_onedrive), engine="openpyxl") as writer:
+            df_danos.to_excel(writer,  sheet_name="Danos",  index=False)
+            df_faltas.to_excel(writer, sheet_name="Faltas", index=False)
+        print(f"  ✅ Salvo no OneDrive: {destino_onedrive}")
+        print(f"  🌐 Dashboard atualizado automaticamente.")
+    else:
+        print(f"\n  ℹ️  OneDrive não encontrado neste PC.")
+        print(f"  📎 Envie o arquivo abaixo para o Ícaro subir no OneDrive:")
+        print(f"     {destino_local}")
+
+
+# ---------------------------------------------------------------------------
+# ETAPA 5 — Exportar arquivos finais para pasta com data
+# ---------------------------------------------------------------------------
+
+# Arquivos gerados pelo pipeline que devem ser exportados
+_ARQUIVOS_SAIDA = [
+    ROOT / "base_pronta.csv",
+    ROOT / "base_falta_pronta.csv",
+    ROOT / "tabela_justificativas_danos.csv",
+    ROOT / "tabela_justificativas_faltas.csv",
+    ROOT / "relatorionotas.csv",
+    BASE2 / "relatorionotas_falta.csv",
+]
+
+
+def _etapa_exportar_pasta() -> None:
+    print("\n=== ETAPA 5 — Exportando arquivos finais ===")
+    hoje = date.today().strftime("%d-%m-%Y")
+    pasta_saida = ROOT / "outputs" / hoje
+    pasta_saida.mkdir(parents=True, exist_ok=True)
+
+    for arquivo in _ARQUIVOS_SAIDA:
+        if arquivo.exists():
+            destino = pasta_saida / arquivo.name
+            shutil.copy2(arquivo, destino)
+            print(f"  ✅ {arquivo.name}")
         else:
-            print(f"  ✅ {' '.join(cmd)}")
+            print(f"  ⚠️  Não encontrado: {arquivo.name}")
+
+    print(f"\n  📁 Pasta gerada: {pasta_saida}")
+
+
+# ---------------------------------------------------------------------------
+# ETAPA 6 — Push automático para o GitHub
+# ---------------------------------------------------------------------------
+
+def _ler_env(chave: str) -> str:
+    """Lê uma variável do arquivo .env sem depender de biblioteca externa."""
+    env_path = ROOT / ".env"
+    if not env_path.exists():
+        return ""
+    for linha in env_path.read_text(encoding="utf-8").splitlines():
+        linha = linha.strip()
+        if not linha or linha.startswith("#") or "=" not in linha:
+            continue
+        k, _, v = linha.partition("=")
+        if k.strip() == chave:
+            return v.strip().strip('"').strip("'")
+    return ""
+
+
+def _git(args: list[str], env_extra: dict | None = None) -> tuple[bool, str]:
+    env = None
+    if env_extra:
+        env = os.environ.copy()
+        env.update(env_extra)
+    try:
+        result = subprocess.run(
+            ["git"] + args,
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        return result.returncode == 0, (result.stdout + result.stderr).strip()
+    except FileNotFoundError:
+        return False, "git não encontrado — instale o Git ou ignore este passo."
+
+
+_ARQUIVOS_COMMIT = [
+    "base_pronta.csv",
+    "base_falta_pronta.csv",
+    "relatorionotas.csv",
+    "relatorionotas_falta.csv",
+    "tabela_justificativas_danos.csv",
+    "tabela_justificativas_faltas.csv",
+]
+
+
+def _etapa_git_push() -> None:
+    print("\n=== ETAPA 6 — Push automático para o GitHub ===")
+
+    token = _ler_env("GITHUB_TOKEN")
+    if not token:
+        print("  ⚠️  GITHUB_TOKEN não encontrado no .env — pulando push automático.")
+        print("  💡  Crie o arquivo .env na raiz com: GITHUB_TOKEN=seu_token_aqui")
+        return
+
+    hoje = date.today().strftime("%d/%m/%Y")
+    repo_url = f"https://{token}@github.com/icarocharleaux-mm/Dash-particionado.git"
+
+    # git add
+    for caminho in _ARQUIVOS_COMMIT:
+        arq = ROOT / Path(caminho)
+        if arq.exists():
+            ok, _ = _git(["add", caminho])
+            status = "✅" if ok else "⚠️ "
+            print(f"  {status} git add {Path(caminho).name}")
+        else:
+            print(f"  —  Não encontrado: {caminho}")
+
+    # git commit
+    ok, out = _git(["commit", "-m", f"Atualiza bases finais — {hoje}"])
+    _sem_mudanca = ("nothing to commit", "no changes added to commit")
+    if not ok and any(m in out.lower() for m in _sem_mudanca):
+        print("  ✅ Nada de novo para commitar — arquivos já atualizados.")
+        return
+    print(f"  {'✅' if ok else '❌'} git commit")
+    if not ok:
+        print(f"     {out}")
+        return
+
+    # Sincroniza com o remoto ANTES do push (evita rejeição "fetch first" quando o
+    # repositório foi atualizado em outra máquina — ex.: melhorias do painel publicadas pelo dev).
+    # -X ours: em conflito, mantém os CSVs recém-gerados; o código do painel vem do remoto sem conflito.
+    print("  ↻ Sincronizando com o GitHub (pull antes do push)...")
+    ok, out = _git(["pull", "--no-rebase", "--no-edit", "-X", "ours", repo_url, "main"])
+    out_seguro = out.replace(token, "***") if token else out
+    if not ok:
+        _git(["merge", "--abort"])       # desfaz merge pela metade, deixa o repo intacto
+        print(f"  ❌ Falha ao sincronizar (pull): {out_seguro}")
+        print("     Repositório mantido intacto. Rode manualmente: git pull --no-rebase -X ours")
+        return
+    print("  ✅ Sincronizado com o remoto.")
+
+    # git push (token embutido na URL temporariamente)
+    ok, out = _git(["push", repo_url, "main"])
+    out_seguro = out.replace(token, "***") if token else out
+    if ok:
+        print("  ✅ Push realizado com sucesso!")
+        print(f"  🌐 https://github.com/icarocharleaux-mm/Dash-particionado")
+    else:
+        print(f"  ❌ Erro no push: {out_seguro}")
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +389,8 @@ async def _main() -> None:
     await _etapa_relatorios(headless=headless)
     _etapa_limpeza_faltas()
     _etapa_limpeza_danos(data_inicio, data_fim)
+    _etapa_gerar_excel_tratativas()
+    _etapa_exportar_pasta()
     _etapa_git_push()
 
     print("\n" + "=" * 60)
