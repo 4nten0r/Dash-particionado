@@ -1,0 +1,19 @@
+# Credenciais
+.env
+
+# Bases brutas da Natura (grandes, com dados de clientes)
+base.csv
+BASE2/base_falta.csv
+
+# Arquivos de backup e diagnóstico
+diagnostico_login.py
+limpeza.py.txt
+limpeza backup.py
+BASE2/limpeza_falta.txt
+
+# Temporários
+_tmp_dl/
+__pycache__/
+*.pyc
+*.xlsx
+*.xls

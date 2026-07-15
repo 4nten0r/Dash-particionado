@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from datetime import date as _date
 
 def aplicar_filtros_barra_lateral(df_uni_base, df_danos_base, df_faltas_base):
     """Cria a barra lateral, captura as escolhas do usuário e filtra os DataFrames."""
@@ -16,28 +17,32 @@ def aplicar_filtros_barra_lateral(df_uni_base, df_danos_base, df_faltas_base):
         opcoes_motorista = sorted(df_uni_base["Motorista"].dropna().unique())
         opcoes_empresa = sorted([str(x) for x in df_uni_base["Empresa"].dropna().unique() if str(x) not in ['Não Identificado', 'N/A']])
         opcoes_canal = sorted([str(x) for x in df_uni_base["Canal"].dropna().unique() if str(x) not in ['Não Identificado', 'N/A']])
+        opcoes_categoria = sorted([str(x) for x in df_uni_base["Categoria"].dropna().unique() if str(x) not in ['Não Identificado', 'nan', 'N/A', '']])
 
         filial_sel = st.selectbox("🏢 Filial:", options=opcoes_filial, index=None, placeholder="Todas")
         motorista_sel = st.selectbox("🚛 Motorista:", options=opcoes_motorista, index=None, placeholder="Todos")
         empresa_sel = st.selectbox("🏭 Empresa (Danos):", options=opcoes_empresa, index=None, placeholder="Todas")
         canal_sel = st.multiselect("🛍️ Marca Canal (Faltas):", options=opcoes_canal, placeholder="Escolha um ou mais...")
+        categoria_sel = st.multiselect("🏷️ Categoria:", options=opcoes_categoria, placeholder="Todas as categorias...")
 
         st.divider()
 
         # --- 2. CALENDÁRIO ---
+        hoje = _date.today()
         if not df_uni_base.empty and 'Data_Filtro' in df_uni_base.columns and not df_uni_base['Data_Filtro'].dropna().empty:
             min_date = df_uni_base['Data_Filtro'].dropna().min().date()
-            max_date = df_uni_base['Data_Filtro'].dropna().max().date()
+            max_date = min(df_uni_base['Data_Filtro'].dropna().max().date(), hoje)
             if min_date == max_date:
                 min_date = min_date - pd.Timedelta(days=7)
         else:
-            hoje = pd.to_datetime('today').date()
             min_date = hoje - pd.Timedelta(days=30)
             max_date = hoje
 
         datas_selecionadas = st.date_input(
             "📅 Período de Análise:",
             value=(min_date, max_date),
+            min_value=min_date,
+            max_value=hoje,
             format="DD/MM/YYYY",
             help="Selecione primeiro a data de INÍCIO e depois a data de FIM."
         )
@@ -86,5 +91,10 @@ def aplicar_filtros_barra_lateral(df_uni_base, df_danos_base, df_faltas_base):
         df_uni = df_uni[df_uni["Canal"].isin(canal_sel)]
         df_danos = df_danos[df_danos["Canal"].isin(canal_sel)]
         df_faltas = df_faltas[df_faltas["Canal"].isin(canal_sel)]
+
+    if len(categoria_sel) > 0:
+        df_uni = df_uni[df_uni["Categoria"].isin(categoria_sel)]
+        df_danos = df_danos[df_danos["Categoria"].isin(categoria_sel)]
+        df_faltas = df_faltas[df_faltas["Categoria"].isin(categoria_sel)]
 
     return df_uni, df_danos, df_faltas

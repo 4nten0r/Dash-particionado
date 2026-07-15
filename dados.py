@@ -1,6 +1,14 @@
 import streamlit as st
 import pandas as pd
+import logging
 
+
+def _norm_chave(serie):
+    """Padroniza chaves de cruzamento (pedido/rota): texto, sem '.0' e sem espaços."""
+    return serie.astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+
+
+@st.cache_data(ttl=300, show_spinner="Carregando bases de dados...")
 def load_data():
     mapa_meses_num = {
         1: 'Jan', 2: 'Fev', 3: 'Mar', 4: 'Abr', 5: 'Mai', 6: 'Jun',
@@ -14,10 +22,8 @@ def load_data():
         df_danos = pd.read_csv("base_pronta.csv", sep=";", encoding="latin-1")
         df_danos.columns = [str(c).replace('\ufeff', '').replace('ï»¿', '').strip().lower() for c in df_danos.columns]
 
-        # Padronização imediata pela coluna 0
         if not df_danos.empty:
-            # CORREÇÃO: Removido dayfirst=True para aceitar o formato YYYY-MM-DD da base
-            df_danos["Data_Filtro"] = pd.to_datetime(df_danos.iloc[:, 0], errors='coerce')
+            df_danos["Data_Filtro"] = pd.to_datetime(df_danos.iloc[:, 0], dayfirst=True, format='mixed', errors='coerce')
             df_danos['Periodo'] = df_danos["Data_Filtro"].dt.month.map(mapa_meses_num).fillna('Não Identificado')
         else:
             df_danos["Data_Filtro"] = pd.NaT
@@ -33,6 +39,8 @@ def load_data():
         df_danos['Tipo_Ocorrencia'] = 'Dano'
         df_danos['Canal'] = 'N/A'
     except Exception as e:
+        logging.error(f"Erro ao carregar base de Danos: {e}")
+        st.error("🚨 Erro Crítico: Não foi possível carregar o arquivo 'base_pronta.csv'. Os dados de Danos estarão vazios.")
         df_danos = pd.DataFrame()
 
     # ==========================================
@@ -42,10 +50,8 @@ def load_data():
         df_faltas = pd.read_csv("base_falta_pronta.csv", sep=";", encoding="latin-1")
         df_faltas.columns = [str(c).replace('\ufeff', '').replace('ï»¿', '').strip().lower() for c in df_faltas.columns]
 
-        # Padronização imediata pela coluna 0
         if not df_faltas.empty:
-            # CORREÇÃO: Removido dayfirst=True para aceitar o formato YYYY-MM-DD da base
-            df_faltas["Data_Filtro"] = pd.to_datetime(df_faltas.iloc[:, 0], errors='coerce')
+            df_faltas["Data_Filtro"] = pd.to_datetime(df_faltas.iloc[:, 0], dayfirst=True, format='mixed', errors='coerce')
             df_faltas['Periodo'] = df_faltas["Data_Filtro"].dt.month.map(mapa_meses_num).fillna('Não Identificado')
         else:
             df_faltas["Data_Filtro"] = pd.NaT
@@ -61,16 +67,17 @@ def load_data():
         df_faltas['Tipo_Ocorrencia'] = 'Falta'
         df_faltas['Empresa'] = 'NATURA'
     except Exception as e:
+        logging.error(f"Erro ao carregar base de Faltas: {e}")
+        st.error("🚨 Erro Crítico: Não foi possível carregar o arquivo 'base_falta_pronta.csv'. Os dados de Faltas estarão vazios.")
         df_faltas = pd.DataFrame()
 
     # ==========================================
-    # 3. UNIFICAR E BLINDAR (Lógica de preenchimento corrigida)
+    # 3. UNIFICAR E BLINDAR
     # ==========================================
     colunas_comuns = ['Cliente', 'Pedido', 'Motorista', 'Filial', 'Categoria', 'Rota', 'Tipo_Ocorrencia', 'Quantidade', 'Periodo', 'Empresa', 'Canal', 'Data_Filtro']
     
     for df in [df_danos, df_faltas]:
         if not df.empty:
-            # Garante que a coluna Quantidade é numérica e substitui vazios por 0 (evita virar texto)
             if 'Quantidade' in df.columns:
                 df['Quantidade'] = pd.to_numeric(df['Quantidade'], errors='coerce').fillna(0)
 
@@ -79,22 +86,67 @@ def load_data():
                     if col == 'Data_Filtro': df[col] = pd.NaT
                     else: df[col] = 'Não Identificado'
                 
-                # SÓ preenche com "Não Identificado" se NÃO for a coluna de data ou de quantidade
                 if col not in ['Data_Filtro', 'Quantidade']:
                     df[col] = df[col].fillna('Não Identificado')
+
+    # Unifica filiais que representam a mesma unidade
+    _FILIAIS_DCX = {
+        'DIAS MD MEGA RIO DE JANEIRO',
+        'DIAS DCX BAIXADA FLUMINENSE',
+        'DIAS DUQUE DE CAXIAS MEGA FILIAL',
+    }
+    for df in [df_danos, df_faltas]:
+        if not df.empty and 'Filial' in df.columns:
+            df['Filial'] = df['Filial'].where(~df['Filial'].isin(_FILIAIS_DCX), 'DIAS DUQUE DE CAXIAS')
 
     df_unificado = pd.concat([df_danos[colunas_comuns], df_faltas[colunas_comuns]], ignore_index=True)
     if not df_unificado.empty and 'Rota' in df_unificado.columns:
         df_unificado['Rota'] = df_unificado['Rota'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
 
     # ==========================================
-    # 4. CARREGAR MAPAS E TRATATIVAS
+    # 4. CARREGAR MAPAS
     # ==========================================
+    df_ped_geo = pd.DataFrame()
+    mapa_ef_danos, mapa_ef_faltas = {}, {}
+    sla_info = {'univ_pct_atraso_danos': None, 'univ_pct_atraso_faltas': None}
     try:
-        # Extraindo as coordenadas e bairros diretamente das bases oficiais!
         df_notas = pd.read_csv("relatorionotas.csv", sep=";", encoding="latin-1", skiprows=7)
         df_falta = pd.read_csv("relatorionotas_falta.csv", sep=";", encoding="latin-1", skiprows=7)
         df_ref = pd.concat([df_notas, df_falta], ignore_index=True)
+
+        # Mapa Pedido -> Efetividade SLA ('Dentro do Prazo' / 'Atrasado'), separado por base:
+        # Danos cruza com relatorionotas; Faltas com relatorionotas_falta (cruzar errado = ~1% match).
+        # Usa só a categórica Efetividade (limpa, 100% preenchida); o Offset numérico tem lixo e foi descartado.
+        def _mapa_efetividade(dfn):
+            colmap = {str(c).strip(): c for c in dfn.columns}
+            cped, cef = colmap.get('Pedido'), colmap.get('Efetividade')
+            if not cped or not cef:
+                return {}, None
+            ped = _norm_chave(dfn[cped])
+            ser = dfn[cef].astype(str).str.strip()
+            mask = ped.ne('') & ped.ne('nan')
+            mapa = dict(zip(ped[mask], ser[mask]))
+            pct_atraso = round((ser[mask] == 'Atrasado').mean() * 100, 1) if mask.any() else None
+            return mapa, pct_atraso
+
+        mapa_ef_danos, sla_info['univ_pct_atraso_danos'] = _mapa_efetividade(df_notas)
+        mapa_ef_faltas, sla_info['univ_pct_atraso_faltas'] = _mapa_efetividade(df_falta)
+
+        # Mapa Pedido -> Cidade/Bairro (cruzamento confiável: 100% das ocorrencias batem por pedido,
+        # ao contrario da Rota, cuja codificacao difere entre Natura e Diaslog)
+        if 'Pedido' in df_ref.columns and 'Cidade' in df_ref.columns:
+            cols_geo = ['Pedido', 'Cidade', 'Bairro']
+            tem_coord = 'LATITUDE' in df_ref.columns and 'LONGITUDE' in df_ref.columns
+            if tem_coord:
+                cols_geo += ['LATITUDE', 'LONGITUDE']
+            df_ped_geo = df_ref[cols_geo].copy()
+            df_ped_geo['Pedido'] = _norm_chave(df_ped_geo['Pedido'])
+            if tem_coord:
+                df_ped_geo['LATITUDE'] = pd.to_numeric(df_ped_geo['LATITUDE'].astype(str).str.replace(',', '.'), errors='coerce')
+                df_ped_geo['LONGITUDE'] = pd.to_numeric(df_ped_geo['LONGITUDE'].astype(str).str.replace(',', '.'), errors='coerce')
+            df_ped_geo = df_ped_geo[df_ped_geo['Pedido'].ne('') & df_ped_geo['Pedido'].ne('nan')]
+            # 1 linha por pedido, priorizando registros com Cidade preenchida
+            df_ped_geo = df_ped_geo.sort_values('Cidade', na_position='last').drop_duplicates(subset=['Pedido'], keep='first')
 
         if 'Rota' in df_ref.columns:
             df_geo = df_ref[['Rota', 'Cidade', 'Bairro', 'LATITUDE', 'LONGITUDE']].dropna(subset=['Rota'])
@@ -109,19 +161,83 @@ def load_data():
                 'LONGITUDE': 'mean'
             }).reset_index()
 
-            # Separamos em dois dataframes para respeitar o formato original do seu return
             df_coord_agg = df_geo_agg[['Rota', 'LATITUDE', 'LONGITUDE']].copy()
             df_mapa_agg = df_geo_agg[['Rota', 'Cidade', 'Bairro']].copy()
         else:
             df_coord_agg, df_mapa_agg = pd.DataFrame(), pd.DataFrame()
 
     except Exception as e:
+        logging.warning(f"Aviso ao carregar mapas geográficos: {e}")
+        st.warning("⚠️ Os arquivos de notas ('relatorionotas.csv' ou 'relatorionotas_falta.csv') não puderam ser carregados corretamente. As abas de mapa podem estar limitadas.")
         df_coord_agg, df_mapa_agg = pd.DataFrame(), pd.DataFrame()
 
+    # ==========================================
+    # 4b. ENRIQUECER OCORRÊNCIAS COM CIDADE/BAIRRO (POR PEDIDO)
+    # ==========================================
+    def _enriquecer_geo(df):
+        if df.empty or 'Pedido' not in df.columns:
+            return df
+        if df_ped_geo.empty:
+            df['Cidade'] = 'Não Identificada'
+            df['Bairro'] = 'Não Identificado'
+            df['Latitude'] = pd.NA
+            df['Longitude'] = pd.NA
+            return df
+        chave = _norm_chave(df['Pedido'])
+        mapa_cid = dict(zip(df_ped_geo['Pedido'], df_ped_geo['Cidade']))
+        mapa_bai = dict(zip(df_ped_geo['Pedido'], df_ped_geo['Bairro']))
+        df['Cidade'] = chave.map(mapa_cid).fillna('Não Identificada')
+        df['Bairro'] = chave.map(mapa_bai).fillna('Não Identificado')
+        # Coordenadas por Pedido (usadas SOMENTE para agregar por Cidade no mapa — nunca por ponto individual, LGPD)
+        if 'LATITUDE' in df_ped_geo.columns and 'LONGITUDE' in df_ped_geo.columns:
+            mapa_lat = dict(zip(df_ped_geo['Pedido'], df_ped_geo['LATITUDE']))
+            mapa_lon = dict(zip(df_ped_geo['Pedido'], df_ped_geo['LONGITUDE']))
+            df['Latitude'] = chave.map(mapa_lat)
+            df['Longitude'] = chave.map(mapa_lon)
+        else:
+            df['Latitude'] = pd.NA
+            df['Longitude'] = pd.NA
+        return df
+
+    df_danos = _enriquecer_geo(df_danos)
+    df_faltas = _enriquecer_geo(df_faltas)
+    df_unificado = _enriquecer_geo(df_unificado)
+
+    # ==========================================
+    # 4c. ENRIQUECER COM EFETIVIDADE/SLA (POR PEDIDO)
+    # ==========================================
+    def _enriquecer_sla(df, mapa):
+        if df.empty or 'Pedido' not in df.columns:
+            return df
+        if not mapa:
+            df['Efetividade'] = 'Não Identificado'
+            return df
+        chave = _norm_chave(df['Pedido'])
+        df['Efetividade'] = chave.map(mapa).fillna('Não Identificado')
+        return df
+
+    df_danos = _enriquecer_sla(df_danos, mapa_ef_danos)
+    df_faltas = _enriquecer_sla(df_faltas, mapa_ef_faltas)
+    # df_unificado: cada linha usa o mapa do seu tipo de ocorrência
+    if not df_unificado.empty and 'Pedido' in df_unificado.columns:
+        chave_u = _norm_chave(df_unificado['Pedido'])
+        ef_u = pd.Series('Não Identificado', index=df_unificado.index, dtype=object)
+        mask_d = df_unificado['Tipo_Ocorrencia'] == 'Dano'
+        if mapa_ef_danos:
+            ef_u.loc[mask_d] = chave_u[mask_d].map(mapa_ef_danos).fillna('Não Identificado')
+        if mapa_ef_faltas:
+            ef_u.loc[~mask_d] = chave_u[~mask_d].map(mapa_ef_faltas).fillna('Não Identificado')
+        df_unificado['Efetividade'] = ef_u
+
+    # ==========================================
+    # 5. CARREGAR TRATATIVAS LOCAIS
+    # ==========================================
     try:
         df_trat1 = pd.read_csv("Tratativas.csv", sep=";", encoding="latin-1").dropna(subset=['MOTORISTA'])
         df_trat2 = pd.read_csv("tratativas2.csv", sep=";", encoding="latin-1").dropna(subset=['MOTORISTA'])
-    except Exception:
+    except Exception as e:
+        logging.warning(f"Aviso ao carregar arquivos locais de tratativas: {e}")
+        # Aqui não precisamos de st.warning na tela principal porque as tratativas agora vêm da aba 8 (Nuvem).
         df_trat1, df_trat2 = pd.DataFrame(), pd.DataFrame()
 
-    return df_danos, df_faltas, df_unificado, df_mapa_agg, df_coord_agg, df_trat1, df_trat2
+    return df_danos, df_faltas, df_unificado, df_mapa_agg, df_coord_agg, df_trat1, df_trat2, sla_info
