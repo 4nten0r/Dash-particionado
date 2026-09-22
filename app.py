@@ -9,6 +9,7 @@ from io import BytesIO
 import streamlit.components.v1 as components
 import json
 import os
+from zoneinfo import ZoneInfo
 from streamlit_option_menu import option_menu
 
 # --- IMPORTANDO AS BIBLIOTECAS DE AUTENTICAÇÃO ---
@@ -367,7 +368,7 @@ elif st.session_state.get("authentication_status"):
             <span class="logo-dias">DIAS+</span>
             <div>
               <div class="hdr-title">PAINEL LOGÍSTICO — NATURA</div>
-              <div class="hdr-sub">Visão consolidada: Danos, Faltas (NC) e Auditoria Logística · Atualizado em {pd.Timestamp.now().strftime('%d/%m/%Y às %H:%M')}</div>
+              <div class="hdr-sub">Visão consolidada: Danos, Faltas (NC) e Auditoria Logística · Atualizado em {pd.Timestamp.now(tz=ZoneInfo('America/Sao_Paulo')).strftime('%d/%m/%Y às %H:%M')}</div>
             </div>
           </div>
           <div class="hdr-right">

@@ -29,6 +29,13 @@ from automacao_diaslog import baixar_relatorio_notas
 ROOT = Path(__file__).parent
 BASE2 = ROOT / "BASE2"
 
+
+def _configurar_saida_terminal() -> None:
+    """Mantém acentos e símbolos do log legíveis no console do Windows."""
+    for fluxo in (sys.stdout, sys.stderr):
+        if hasattr(fluxo, "reconfigure"):
+            fluxo.reconfigure(encoding="utf-8", errors="replace")
+
 # Pastas onde os Excel da Natura costumam chegar
 _PASTAS_BUSCA = [
     Path.home() / "Documents",
@@ -103,6 +110,30 @@ def _arquivos_falta() -> list[Path]:
     return [_encontrar_excel("PPM Falta*.xlsx")]
 
 
+def _validar_arquivo_excel(caminho: Path, descricao: str) -> Path:
+    caminho = Path(caminho).expanduser()
+    if not caminho.is_file():
+        raise FileNotFoundError(f"Arquivo de {descricao} não encontrado: {caminho}")
+    if caminho.suffix.lower() not in (".xlsx", ".xlsm"):
+        raise ValueError(f"Arquivo de {descricao} precisa ser Excel (.xlsx ou .xlsm): {caminho}")
+    return caminho.resolve()
+
+
+def _arquivos_falta_informados(valor: str) -> list[Path]:
+    """Converte caminhos digitados no terminal em arquivos PPM Falta."""
+    caminhos = [Path(item.strip().strip('"')) for item in valor.split(";") if item.strip()]
+    arquivos = []
+    for caminho in caminhos:
+        if caminho.is_dir():
+            arquivos.extend(sorted(caminho.glob("*.xlsx")))
+            arquivos.extend(sorted(caminho.glob("*.xlsm")))
+        else:
+            arquivos.append(caminho)
+    if not arquivos:
+        raise FileNotFoundError("Nenhum arquivo Excel de Faltas foi encontrado no caminho informado.")
+    return [_validar_arquivo_excel(caminho, "Faltas") for caminho in arquivos]
+
+
 def _xlsx_para_csv_stream(origem: Path, destino: Path) -> int:
     """Excel → CSV em streaming (openpyxl read_only) — rápido e leve p/ arquivos grandes."""
     wb = load_workbook(str(origem), read_only=True)
@@ -118,16 +149,22 @@ def _xlsx_para_csv_stream(origem: Path, destino: Path) -> int:
     return n
 
 
-def _etapa_converter_bases() -> None:
+def _etapa_converter_bases(
+    excel_danos: Path | None = None,
+    arquivos_falta: list[Path] | None = None,
+) -> None:
     print("\n=== ETAPA 0 — Conversão dos Excel da Natura ===")
 
-    excel_danos = _encontrar_excel("Reclamações*.xlsx")
+    excel_danos = _validar_arquivo_excel(
+        excel_danos or _encontrar_excel("Reclamações*.xlsx"), "Danos"
+    )
     _excel_para_csv_base(excel_danos, ROOT / "base.csv")
 
     # Faltas: a Natura manda vários PPM (trimestres) com períodos SOBREPOSTOS e rótulos
     # trocados. Consolidamos os arquivos oficiais (pasta faltas_fonte) e removemos as
     # faltas repetidas pela identidade da ocorrência, para não contar em dobro no dashboard.
-    arquivos_falta = _arquivos_falta()
+    arquivos_falta = arquivos_falta or _arquivos_falta()
+    arquivos_falta = [_validar_arquivo_excel(arquivo, "Faltas") for arquivo in arquivos_falta]
     tmp_dir = BASE2 / "_tmp_falta"
     dfs = []
     for i, arq in enumerate(arquivos_falta):
@@ -245,15 +282,21 @@ async def _etapa_relatorios(headless: bool) -> None:
     print("\n=== ETAPA 1 — Relatórios Diaslog ===")
 
     print("\n[Danos]")
+    pedidos_danos = _extrair_pedidos_danos()
+    if not pedidos_danos:
+        raise RuntimeError("Nenhum pedido de Danos da transportadora Dias foi encontrado.")
     await _baixar_em_lotes(
-        pedidos=_extrair_pedidos_danos(),
+        pedidos=pedidos_danos,
         destino=ROOT / "relatorionotas.csv",
         headless=headless,
     )
 
     print("\n[Faltas]")
+    pedidos_faltas = _extrair_pedidos_faltas()
+    if not pedidos_faltas:
+        raise RuntimeError("Nenhum pedido de Faltas da transportadora Dias foi encontrado.")
     await _baixar_em_lotes(
-        pedidos=_extrair_pedidos_faltas(),
+        pedidos=pedidos_faltas,
         destino=BASE2 / "relatorionotas_falta.csv",
         headless=headless,
     )
@@ -455,21 +498,21 @@ _ARQUIVOS_COMMIT = [
 _GITHUB_REPOSITORIO_PADRAO = "4nten0r/dash-particionado"
 
 
-def _etapa_git_push() -> None:
+def _etapa_git_push() -> bool:
     print("\n=== ETAPA 6 — Push automático para o GitHub ===")
 
     token = _ler_env("GITHUB_TOKEN")
     if not token:
-        print("  ⚠️  GITHUB_TOKEN não encontrado no arquivo env — pulando push automático.")
+        print("  ❌ GITHUB_TOKEN não encontrado no arquivo env — push não realizado.")
         print("  💡  Crie o arquivo env na raiz com: GITHUB_TOKEN=seu_token_aqui")
-        return
+        return False
 
     # Verifica se o Git está instalado nesta máquina
     ok_git, _ = _git(["--version"])
     if not ok_git:
-        print("  ⚠️  Git não está instalado nesta máquina — pulando push automático.")
+        print("  ❌ Git não está instalado nesta máquina — push não realizado.")
         print("  💡  Instale o Git para Windows: https://git-scm.com/download/win")
-        return
+        return False
 
     # A pasta pode ter sido copiada sem o diretório oculto .git.
     if not (ROOT / ".git").exists():
@@ -481,7 +524,7 @@ def _etapa_git_push() -> None:
         if not ok:
             print("  ❌ Não foi possível inicializar o repositório Git.")
             print(f"     {out}")
-            return
+            return False
         print("  ✅ Repositório Git inicializado na pasta do projeto.")
 
     # Garante identidade do Git (commit/merge exigem isso; em máquina nova pode não estar setado)
@@ -518,7 +561,7 @@ def _etapa_git_push() -> None:
     elif not ok:
         print("  ❌ git commit")
         print(f"     {out}")
-        return
+        return False
     else:
         print("  ✅ git commit")
 
@@ -549,6 +592,7 @@ def _etapa_git_push() -> None:
     else:
         print("  ❌ Não foi possível enviar após 3 tentativas.")
         print("     Rode manualmente: git pull --no-rebase -X ours origin main  e depois  git push origin main")
+    return enviado
 
 
 # ---------------------------------------------------------------------------
@@ -566,6 +610,23 @@ def _pedir_periodo() -> tuple[str, str]:
     return inicio, fim
 
 
+def _pedir_arquivos_bases() -> tuple[Path, list[Path]]:
+    print("\n" + "=" * 60)
+    print("ARQUIVOS DE ENTRADA — DANOS E FALTAS")
+    print("=" * 60)
+    print("ENTER em Danos usa o Excel 'Reclamações*.xlsx' mais recente.")
+    danos = input("Caminho do Excel de Danos [ENTER = automático]: ").strip()
+    excel_danos = _validar_arquivo_excel(
+        Path(danos) if danos else _encontrar_excel("Reclamações*.xlsx"), "Danos"
+    )
+
+    print("\nEm Faltas, informe um ou mais arquivos separados por ';' ou uma pasta.")
+    print(f"ENTER usa a pasta padrão: {_FALTAS_FONTE}")
+    faltas = input("Caminho(s) do(s) Excel de Faltas [ENTER = automático]: ").strip()
+    arquivos_falta = _arquivos_falta_informados(faltas) if faltas else _arquivos_falta()
+    return excel_danos, arquivos_falta
+
+
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Pipeline Dias+ — Base Natura → Diaslog → Dashboard")
     p.add_argument("--auto", action="store_true",
@@ -575,6 +636,9 @@ def _parse_args() -> argparse.Namespace:
                    help="Roda o navegador em modo invisível (sem --auto, ainda é perguntado no terminal).")
     p.add_argument("--data-inicio", default="", help="Data inicial do filtro de ofensores (dd/mm/aaaa).")
     p.add_argument("--data-fim", default="", help="Data final do filtro de ofensores (dd/mm/aaaa).")
+    p.add_argument("--arquivo-danos", default="", help="Caminho do Excel de Danos.")
+    p.add_argument("--arquivo-falta", action="append", default=[],
+                   help="Caminho de um Excel/pasta de Faltas; pode repetir a opção.")
     return p.parse_args()
 
 
@@ -588,19 +652,29 @@ async def _main() -> None:
         # Chamado pelo Painel de Execução (painel_execucao.pyw) — sem prompts interativos.
         headless = args.headless
         data_inicio, data_fim = args.data_inicio, args.data_fim
+        excel_danos = _validar_arquivo_excel(
+            Path(args.arquivo_danos) if args.arquivo_danos else _encontrar_excel("Reclamações*.xlsx"),
+            "Danos",
+        )
+        if args.arquivo_falta:
+            arquivos_falta = _arquivos_falta_informados(";".join(args.arquivo_falta))
+        else:
+            arquivos_falta = _arquivos_falta()
         print(f"\n[Painel] Modo automático — headless={headless}, "
               f"período={data_inicio or 'histórico todo'} a {data_fim or '(hoje)'}")
     else:
         headless = input("\nRodar browser em modo invisível? (s/N): ").strip().lower() == "s"
+        excel_danos, arquivos_falta = _pedir_arquivos_bases()
         data_inicio, data_fim = _pedir_periodo()
 
-    _etapa_converter_bases()
+    _etapa_converter_bases(excel_danos, arquivos_falta)
     await _etapa_relatorios(headless=headless)
     _etapa_limpeza_faltas()
     _etapa_limpeza_danos(data_inicio, data_fim)
     _etapa_gerar_excel_tratativas()
     _etapa_exportar_pasta()
-    _etapa_git_push()
+    if not _etapa_git_push():
+        raise RuntimeError("O pipeline terminou sem realizar o commit/push no GitHub.")
 
     print("\n" + "=" * 60)
     print("✅ Pipeline concluído!")
@@ -608,4 +682,5 @@ async def _main() -> None:
 
 
 if __name__ == "__main__":
+    _configurar_saida_terminal()
     asyncio.run(_main())

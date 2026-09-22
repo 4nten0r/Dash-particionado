@@ -44,6 +44,7 @@ Painel Streamlit que analisa **Danos** e **Faltas** de mercadorias da **Natura**
 - **Filiais unificadas** em `dados.py`: `DIAS MD MEGA RIO DE JANEIRO`, `DIAS DCX BAIXADA FLUMINENSE`, `DIAS DUQUE DE CAXIAS MEGA FILIAL` → `DIAS DUQUE DE CAXIAS`.
 - **`CD_Origem`** (centro de distribuição da Natura/Avon que despachou a carga): Danos usa `centro_distribuicao` (já selecionada por nome em `limpeza.py`); Faltas usa `distribution_center_name` (coluna Q/índice 16 em `base_falta.csv`, adicionada em `BASE2/limpeza_falta.py`). Normalizado em `dados.py` (`_normalizar_cd_origem`) porque a grafia diverge entre as duas bases: `CD SÃO PAULO`/`NASP`, `CD MATIAS BARBOSA`/`MATIAS BARBOSA`, `CD CABREÚVA`/`CABREUVA` → mesmos 3 nomes canônicos. Filtrando só a nossa transportadora, preenchimento é 100% dos dois lados.
 - **`base_pronta.csv`/`base_falta_pronta.csv` devem ser lidos com `encoding="utf-8-sig"`** em `dados.py` (não `latin-1`) — é assim que `limpeza.py`/`limpeza_falta.py` os escrevem; ler com o encoding errado corrompe acentos (ex.: "CABREÚVA" virava "CABREÃVA"). `relatorionotas*.csv` (fonte externa, Diaslog) continuam em `latin-1` — não mexer nesses.
+- **Seleção das entradas no terminal:** `python main.py` pergunta o caminho do Excel de Danos e aceita um ou mais caminhos de Faltas separados por `;` (ou uma pasta). ENTER mantém a busca automática. Também é possível usar `--arquivo-danos caminho.xlsx` e repetir `--arquivo-falta caminho.xlsx` no modo automático.
 
 ## Convenções técnicas (gotchas que já morderam)
 - **Datas brasileiras:** sempre `pd.to_datetime(..., dayfirst=True, format='mixed', errors='coerce')`. Sem `dayfirst`, dias > 12 viram `NaT` e somem.
@@ -71,6 +72,7 @@ Painel Streamlit que analisa **Danos** e **Faltas** de mercadorias da **Natura**
 - Máquina nova precisa: **Git instalado**, ser um **clone** do repo (não cópia solta), `.env` com token.
 - **Não** colocar a pasta (com `.git`) dentro de pasta sincronizada por OneDrive (corrompe).
 - Quem roda o pipeline **por último sobrescreve** os CSVs no GitHub (`-X ours`).
+- O pipeline só exibe sucesso depois de concluir as conversões, downloads, limpezas, exportações e o commit/push. Sem `GITHUB_TOKEN`, Git, pedidos válidos ou arquivos finais, termina com erro e informa a causa.
 
 ## LGPD (regra da organização)
 Ao criar **material** (planilha, HTML, dashboard, exportação): remover CPF, RG, CNH, endereço residencial, telefone, e-mail pessoal, dados bancários PF. Usar filial, OS, SLA, CNPJ PJ e métricas agregadas; mascarar quando necessário. Clientes Natura são majoritariamente **consultoras (PF)** — cuidado com nome + código em materiais compartilhados. **Nunca** usar CPF/CNPJ do `relatorionotas` em saídas.
