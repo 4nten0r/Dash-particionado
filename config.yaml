@@ -1,0 +1,17 @@
+credentials:
+  usernames:
+    qualidadedias:
+      email: "qualidade@grupodias.com.br"
+      name: "Equipe Qualidade Dias"
+      password: "$2b$12$cfp0ZJWTcvoqW0M7jBdcMOxAL9rI3nBCdewRBoQwiqU0SL04.8UHK" # Senha padrão: logistica123
+    natura:
+      email: "operacao.natura@grupodias.com.br"
+      name: "Operação Natura"
+      password: "$2b$12$cfp0ZJWTcvoqW0M7jBdcMOxAL9rI3nBCdewRBoQwiqU0SL04.8UHK" # Senha padrão: logistica123
+cookie:
+  expiry_days: 30
+  key: "chave_secreta_painel_logistica_2026"
+  name: "cookie_autenticacao_dash"
+pre-authorized:
+  emails:
+    - qualidade@grupodias.com.br

@@ -1,0 +1,35 @@
+# Credenciais
+.env
+env
+BASE2/.diaslog_cred.enc
+
+# Bases brutas da Natura (grandes, com dados de clientes)
+base.csv
+BASE2/base_falta.csv
+
+# Arquivos de backup e diagnóstico
+diagnostico_login.py
+limpeza.py.txt
+limpeza backup.py
+BASE2/limpeza_falta.txt
+
+# Temporários
+_tmp_dl/
+__pycache__/
+*.pyc
+*.xlsx
+*.xls
+outputs/
+tempCodeRunnerFile.py
+
+# Config do Claude Code
+.claude/
+
+# Pasta de origem dos PPM Falta (Excel grandes; consolidados pelo pipeline)
+BASE2/faltas_fonte/
+BASE2/_tmp_falta/
+
+# Leftovers do experimento de congelamento (não usados)
+base_falta_pronta_hist.csv
+BASE2/base_falta_hist.csv
+BASE2/relatorionotas_falta_hist.csv
