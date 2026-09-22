@@ -24,6 +24,14 @@ from graficos import (plot_top_motoristas, plot_comparativo_filial, plot_pizza_t
                       plot_curva_abc, plot_heatmap_recorrencia, plot_mapa_rotas, plot_mapa_cidades,
                       plot_evolucao_temporal, plot_comparativo_temporal_tipo, plot_comparativo_cd_tipo)
 
+
+def _texto_atualizacao_bases() -> str:
+    try:
+        return ("Bases atualizadas em "
+                + open("data_atualizacao.txt", encoding="utf-8").read().strip())
+    except (FileNotFoundError, OSError):
+        return "Data de atualização das bases não disponível"
+
 # Configuração da Página e CSS (DEVE SER O PRIMEIRO COMANDO)
 st.set_page_config(page_title="Dias+ Painel Logístico", layout="wide", page_icon="🚀")
 
@@ -368,7 +376,7 @@ elif st.session_state.get("authentication_status"):
             <span class="logo-dias">DIAS+</span>
             <div>
               <div class="hdr-title">PAINEL LOGÍSTICO — NATURA</div>
-              <div class="hdr-sub">Visão consolidada: Danos, Faltas (NC) e Auditoria Logística · Atualizado em {pd.Timestamp.now(tz=ZoneInfo('America/Sao_Paulo')).strftime('%d/%m/%Y às %H:%M')}</div>
+              <div class="hdr-sub">Visão consolidada: Danos, Faltas (NC) e Auditoria Logística · {_texto_atualizacao_bases()}</div>
             </div>
           </div>
           <div class="hdr-right">

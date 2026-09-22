@@ -19,6 +19,7 @@ import subprocess
 import sys
 from datetime import date
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 
 import pandas as pd
@@ -493,6 +494,7 @@ _ARQUIVOS_COMMIT = [
     "relatorionotas_falta.csv",
     "tabela_justificativas_danos.csv",
     "tabela_justificativas_faltas.csv",
+    "data_atualizacao.txt",
 ]
 
 _GITHUB_REPOSITORIO_PADRAO = "4nten0r/dash-particionado"
@@ -537,6 +539,10 @@ def _etapa_git_push() -> bool:
             _git(["config", "user.email", email])
 
     hoje = date.today().strftime("%d/%m/%Y")
+    (ROOT / "data_atualizacao.txt").write_text(
+        f"{hoje} às {pd.Timestamp.now(tz=ZoneInfo('America/Sao_Paulo')).strftime('%H:%M')}\n",
+        encoding="utf-8",
+    )
     repositorio = _ler_env("GITHUB_REPOSITORY") or _GITHUB_REPOSITORIO_PADRAO
     repositorio = repositorio.removeprefix("https://github.com/").removesuffix(".git").strip("/")
     repo_url = f"https://{token}@github.com/{repositorio}.git"
