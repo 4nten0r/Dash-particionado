@@ -113,10 +113,10 @@ try:
 
 except FileNotFoundError:
     print("\nERRO NA ETAPA 1: Arquivos base.csv ou relatorionotas.csv não encontrados.")
-    exit() 
+    raise
 except Exception as e:
     print(f"\nErro inesperado na Etapa 1: {e}")
-    exit()
+    raise
 
 
 # =============================================================================

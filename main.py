@@ -17,6 +17,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from datetime import date
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -57,6 +58,15 @@ _TRANSPORTADORAS_FALTAS = {
     "MD DELIVERY",
     "MD DELIVERY TRANSPORTES EIRELI",
     "MM DELIVERY",
+}
+
+
+def _normalizar_transportadora(valor: object) -> str:
+    return "".join(str(valor).upper().split()).replace(".", "")
+
+
+_TRANSPORTADORAS_FALTAS_NORMALIZADAS = {
+    _normalizar_transportadora(nome) for nome in _TRANSPORTADORAS_FALTAS
 }
 
 
@@ -230,8 +240,8 @@ def _extrair_pedidos_danos() -> list[str]:
 
 def _extrair_pedidos_faltas() -> list[str]:
     df = _ler_colunas(BASE2 / "base_falta.csv", ["nome_transportadora", "nm_pedido"])
-    df["nome_transportadora"] = df["nome_transportadora"].astype(str).str.strip()
-    df = df[df["nome_transportadora"].isin(_TRANSPORTADORAS_FALTAS)]
+    transportadoras = df["nome_transportadora"].map(_normalizar_transportadora)
+    df = df[transportadoras.isin(_TRANSPORTADORAS_FALTAS_NORMALIZADAS)]
     pedidos = _limpar_pedido(df["nm_pedido"])
     print(f"  → {len(pedidos)} pedidos Dias únicos (faltas)")
     return pedidos
@@ -309,7 +319,11 @@ async def _etapa_relatorios(headless: bool) -> None:
 
 def _etapa_limpeza_faltas() -> None:
     print("\n=== ETAPA 2 — Limpeza Faltas ===")
+    inicio = time.time()
     subprocess.run([sys.executable, "limpeza_falta.py"], cwd=str(BASE2), check=True)
+    saida = BASE2 / "base_falta_pronta.csv"
+    if not saida.exists() or saida.stat().st_mtime < inicio:
+        raise RuntimeError("A limpeza de Faltas não gerou uma base nova.")
     # Copia para a raiz os arquivos que o dashboard (dados.py) lê de lá
     for nome in ("base_falta_pronta.csv", "relatorionotas_falta.csv"):
         src = BASE2 / nome
@@ -327,6 +341,7 @@ def _etapa_limpeza_faltas() -> None:
 
 def _etapa_limpeza_danos(data_inicio: str, data_fim: str) -> None:
     print("\n=== ETAPA 3 — Limpeza Danos + Justificativas ===")
+    inicio = time.time()
     subprocess.run(
         [sys.executable, "limpeza.py"],
         cwd=str(ROOT),
@@ -334,6 +349,10 @@ def _etapa_limpeza_danos(data_inicio: str, data_fim: str) -> None:
         text=True,
         check=True,
     )
+    saidas = (ROOT / "base_pronta.csv", ROOT / "tabela_justificativas_danos.csv")
+    ausentes = [str(saida.name) for saida in saidas if not saida.exists() or saida.stat().st_mtime < inicio]
+    if ausentes:
+        raise RuntimeError("A limpeza de Danos não gerou arquivos novos: " + ", ".join(ausentes))
 
 
 # ---------------------------------------------------------------------------

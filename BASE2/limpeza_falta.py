@@ -1,4 +1,5 @@
 import pandas as pd
+import re
 
 # Colunas solicitadas da base_falta
 # E=4, K=10, P=15, Q=16, X=23, Y=24, AB=27, AF=31, AQ=42, AR=43, AV=47, AW=48, AX=49
@@ -39,8 +40,18 @@ transportadoras_permitidas = [
     "MM DELIVERY"
 ]
 
+def normalizar_transportadora(valor):
+    return re.sub(r"[.]", "", "".join(str(valor).upper().split()))
+
+transportadoras_permitidas = {
+    normalizar_transportadora(nome) for nome in transportadoras_permitidas
+}
+
 # Aplica o filtro: mantém na df_base apenas as linhas onde a transportadora está na lista acima
-df_base = df_base[df_base['nome_transportadora'].isin(transportadoras_permitidas)]
+df_base = df_base[
+    df_base['nome_transportadora'].map(normalizar_transportadora)
+    .isin(transportadoras_permitidas)
+]
 # ---------------------------------------------
 
 # SEGURANÇA: a Natura manda arquivos PPM com períodos sobrepostos. Remove faltas
